@@ -1,0 +1,52 @@
+# 环境变量配置示例
+# 复制此文件为 .env 并根据实际情况修改
+
+# ========================================
+# 核心配置（常需修改的配置项）
+# ========================================
+
+# 数据库配置
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=pdf_rag
+DB_USER=postgres
+DB_PASS=postgres
+
+# Ollama服务配置
+OLLAMA_HOST=192.168.31.80
+# OLLAMA_HOST=127.0.0.1
+OLLAMA_PORT=11434
+OLLAMA_MODEL=qwen3:14b
+
+# ========================================
+# Web API配置
+# ========================================
+API_HOST=0.0.0.0
+API_PORT=8000
+API_RELOAD=true
+
+# ========================================
+# 可选配置（覆盖config.yaml中的默认值）
+# ========================================
+
+# 日志配置
+# LOG_LEVEL=INFO
+# LOG_FILE=logs/pdf_rag.log
+
+# 性能调优
+# MAX_WORKERS=4
+# CHUNK_SIZE=2000
+# CHUNK_OVERLAP=400
+# TOP_K=12
+# RERANK_TOP_K=8
+
+# 嵌入模型
+# EMBEDDING_MODEL=nomic-embed-text
+# EMBEDDING_API_URL=http://192.168.31.80:11434
+
+# ========================================
+# 说明：
+# 1. 注释掉的配置项会使用config.yaml中的默认值
+# 2. 取消注释并修改值可以覆盖默认配置
+# 3. 环境变量优先级高于config.yaml配置
+# ======================================== 

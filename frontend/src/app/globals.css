@@ -1,0 +1,307 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* 浅色主题 - 柔和的奶白色背景 */
+    --background: 0 0% 98%;
+    --foreground: 222.2 54% 8%;
+    --card: 0 0% 99%;
+    --card-foreground: 222.2 54% 8%;
+    --popover: 0 0% 99%;
+    --popover-foreground: 222.2 54% 8%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222.2 54% 12%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215.4 16.3% 42%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222.2 54% 12%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 88%;
+    --input: 214.3 31.8% 90%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* 深色主题 - 温暖的深灰背景 */
+    --background: 222 25% 12%;
+    --foreground: 210 10% 42%;
+    --card: 222 25% 14%;
+    --card-foreground: 210 40% 92%;
+    --popover: 222 25% 14%;
+    --popover-foreground: 210 40% 92%;
+    --primary: 217.2 91.2% 64%;
+    --primary-foreground: 222 25% 12%;
+    --secondary: 217.2 20% 20%;
+    --secondary-foreground: 210 40% 88%;
+    --muted: 217.2 20% 20%;
+    --muted-foreground: 215 15% 70%;
+    --accent: 217.2 20% 22%;
+    --accent-foreground: 210 40% 88%;
+    --destructive: 0 62.8% 55%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 20% 18%;
+    --input: 217.2 20% 22%;
+    --ring: 224.3 76.3% 84%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: hsl(var(--muted));
+}
+
+/* Firefox滚动条样式 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) hsl(var(--muted));
+}
+
+/* 防止滚动条跳动 */
+.stable-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+/* 平滑滚动优化 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 防止布局跳动的滚动容器 */
+.scroll-container {
+  scrollbar-gutter: stable;
+  overflow-y: auto;
+}
+
+/* 优化prose内容间距 */
+.prose-content {
+  /* 移除第一个元素的上边距 */
+}
+
+.prose-content > *:first-child {
+  margin-top: 0 !important;
+}
+
+.prose-content > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 聊天消息中的prose优化 */
+.chat-message .prose > *:first-child {
+  margin-top: 0 !important;
+}
+
+.chat-message .prose > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 减少prose段落间距 */
+.chat-message .prose p {
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.chat-message .prose p:first-child {
+  margin-top: 0 !important;
+}
+
+.chat-message .prose p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 其他元素的间距优化 */
+.chat-message .prose h1,
+.chat-message .prose h2,
+.chat-message .prose h3,
+.chat-message .prose h4,
+.chat-message .prose h5,
+.chat-message .prose h6 {
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.chat-message .prose h1:first-child,
+.chat-message .prose h2:first-child,
+.chat-message .prose h3:first-child,
+.chat-message .prose h4:first-child,
+.chat-message .prose h5:first-child,
+.chat-message .prose h6:first-child {
+  margin-top: 0 !important;
+}
+
+.chat-message .prose ul,
+.chat-message .prose ol {
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.chat-message .prose ul:first-child,
+.chat-message .prose ol:first-child {
+  margin-top: 0 !important;
+}
+
+.chat-message .prose ul:last-child,
+.chat-message .prose ol:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 深色主题边框优化 */
+.dark .border {
+  border-color: hsl(var(--border) / 0.6) !important;
+}
+
+.dark .border-border {
+  border-color: hsl(var(--border) / 0.5) !important;
+}
+
+.dark .border-t {
+  border-top-color: hsl(var(--border) / 0.4) !important;
+}
+
+.dark .border-b {
+  border-bottom-color: hsl(var(--border) / 0.4) !important;
+}
+
+.dark .border-l {
+  border-left-color: hsl(var(--border) / 0.4) !important;
+}
+
+.dark .border-r {
+  border-right-color: hsl(var(--border) / 0.4) !important;
+}
+
+/* 深色主题下卡片边框更柔和 */
+.dark .chat-message {
+  border-color: hsl(var(--border) / 0.3) !important;
+}
+
+/* 思考过程区域边框 */
+.dark .chat-message .border-t.border-border {
+  border-top-color: hsl(var(--border) / 0.3) !important;
+}
+
+/* 参考文档卡片边框 */
+.dark .chat-message .border.bg-muted\/50 {
+  border-color: hsl(var(--border) / 0.2) !important;
+}
+
+/* 搜索高亮样式 - 增强选择器优先级 */
+mark, 
+mark[class], 
+.prose mark,
+.prose mark[class],
+div mark,
+div .prose mark {
+  background-color: #fef08a !important; /* yellow-200 */
+  color: #1f2937 !important; /* 统一使用深色 */
+  padding: 0.125rem 0.25rem !important;
+  border-radius: 0.25rem !important;
+  font-weight: 600 !important;
+  display: inline !important;
+}
+
+.dark mark, 
+.dark mark[class], 
+.dark .prose mark,
+.dark .prose mark[class],
+.dark div mark,
+.dark div .prose mark {
+  background-color: #fbbf24 !important; /* yellow-400 更亮的黄色 */
+  color: #1f2937 !important; /* 深灰-900 */
+}
+
+/* 确保prose容器不会覆盖mark样式 */
+.prose :where(mark):not(:where([class~="not-prose"] *)) {
+  background-color: #fef08a !important;
+  color: #1f2937 !important; /* 深色 */
+  padding: 0.125rem 0.25rem !important;
+  border-radius: 0.25rem !important;
+  font-weight: 600 !important;
+}
+
+.dark .prose :where(mark):not(:where([class~="not-prose"] *)) {
+  background-color: #fbbf24 !important; /* yellow-400 */
+  color: #1f2937 !important; /* 深灰-900 */
+}
+
+/* 深色主题下强制覆盖内联样式 */
+.dark mark[style] {
+  background-color: #fbbf24 !important; /* yellow-400 */
+  color: #1f2937 !important; /* 深灰-900 */
+}
+
+/* 搜索高亮专用样式 - 最高优先级 */
+.search-highlight {
+  background-color: #fef08a !important; /* yellow-200 */
+  color: #1f2937 !important; /* 深灰-900 */
+  padding: 0.125rem 0.25rem !important;
+  border-radius: 0.25rem !important;
+  font-weight: 600 !important;
+  display: inline !important;
+}
+
+.dark .search-highlight {
+  background-color: #fde047 !important; /* yellow-300 更亮更对比 */
+  color: #1f2937 !important; /* 深灰-900 强制深色 */
+}
+
+/* 确保深色主题下搜索高亮的文字颜色 - 超强选择器 */
+html.dark .search-highlight,
+html.dark mark.search-highlight,
+html.dark .prose .search-highlight,
+body .dark .search-highlight,
+.dark mark.search-highlight[style],
+.dark .search-highlight[style] {
+  background-color: #fde047 !important; /* yellow-300 */
+  color: #1f2937 !important; /* 深灰-900 */
+}
+
+/* 覆盖所有可能的样式继承 */
+.dark .search-highlight * {
+  color: inherit !important;
+}
+
+/* 终极深色主题搜索高亮修复 */
+html.dark body .search-highlight,
+html.dark body mark.search-highlight,
+html.dark body .prose .search-highlight {
+  background-color: #facc15 !important; /* yellow-400 非常亮的黄色 */
+  color: #000000 !important; /* 纯黑色文字 */
+  padding: 0.125rem 0.25rem !important;
+  border-radius: 0.25rem !important;
+  font-weight: 600 !important;
+} 
