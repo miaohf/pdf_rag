@@ -146,7 +146,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
   return (
     <div className="h-full flex flex-col bg-background transition-all duration-300">
       {/* 消息列表 */}
-      <div className="flex-1 scroll-container p-6 space-y-4 w-full overflow-y-auto">
+      <div className="flex-1 scroll-container px-4 pt-4 pb-1 space-y-4 w-full overflow-y-auto">
         {messages.map((message) => (
           <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[80%] ${message.type === 'user' ? 'order-2' : 'order-1'}`}>
@@ -258,7 +258,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
       {/* 输入区域 */}
       <div className="w-full border-t border-border/20 bg-card/50 backdrop-blur-sm">
         {/* 切换按钮 */}
-        <div className="flex justify-center py-1">
+        <div className="hidden">
           <Button
             variant="ghost"
             size="sm"
@@ -275,8 +275,8 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
 
         {/* 输入框区域 */}
         {!isInputHidden && (
-          <div className="px-6 pb-6 pt-2">
-            <form onSubmit={handleSubmit} className="flex gap-3 px-4">
+          <div className="px-3 pb-5 pt-0">
+            <form onSubmit={handleSubmit} className="flex gap-2 px-2">
               <textarea
                 ref={inputRef}
                 value={inputValue}
@@ -285,22 +285,19 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
                   autoResizeTextarea(e.target)
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="输入您的问题..."
+                placeholder="Input your question..."
                 disabled={isLoading}
-                rows={1}
-                className="flex-1 input-enhanced rounded-xl px-4 py-3 text-sm placeholder:text-muted-foreground/60 focus:outline-none max-h-40 overflow-y-auto"
+                rows={2}
+                className="flex-1 input-enhanced rounded-xl px-4 py-4 text-base placeholder:text-muted-foreground/60 focus:outline-none max-h-44 min-h-20 overflow-y-auto"
               />
               <Button 
                 type="submit" 
                 disabled={!inputValue.trim() || isLoading}
-                className="btn-primary-enhanced rounded-xl px-4 py-3"
+                className="btn-primary-enhanced rounded-xl px-4 py-4"
               >
                 <Send className="w-4 h-4" />
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground/60 mt-3 text-center px-4">
-              Enter 发送 • Shift + Enter 换行
-            </p>
           </div>
         )}
       </div>

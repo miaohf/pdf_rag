@@ -370,7 +370,7 @@ export default function DocumentViewer({
                   <div
                     key={index}
                     data-line={lineNumber}
-                    className={`flex ${isHighlighted ? 'bg-yellow-200 dark:bg-yellow-600/40 border-l-4 border-yellow-500' : ''}`}>
+                    className={`flex ${isHighlighted ? 'bg-yellow-200 dark:bg-yellow-600/40 border-l-4 border-yellow-500' : ''}`}
                   >
                     <span className="inline-block w-12 text-muted-foreground text-right pr-4 select-none">
                       {lineNumber}
