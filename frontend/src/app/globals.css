@@ -4,50 +4,50 @@
 
 @layer base {
   :root {
-    /* 浅色主题 - 柔和的奶白色背景 */
-    --background: 0 0% 98%;
-    --foreground: 222.2 54% 8%;
-    --card: 0 0% 99%;
-    --card-foreground: 222.2 54% 8%;
-    --popover: 0 0% 99%;
-    --popover-foreground: 222.2 54% 8%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 94%;
-    --secondary-foreground: 222.2 54% 12%;
-    --muted: 210 40% 94%;
-    --muted-foreground: 215.4 16.3% 42%;
-    --accent: 210 40% 94%;
-    --accent-foreground: 222.2 54% 12%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 88%;
-    --input: 214.3 31.8% 90%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    /* 浅色主题 - Slate + Indigo */
+    --background: 210 40% 98%;           /* slate-50 */
+    --foreground: 222 47% 11%;           /* slate-900 */
+    --card: 0 0% 100%;                   /* white */
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 245 58% 55%;              /* indigo-600 */
+    --primary-foreground: 0 0% 100%;     /* white */
+    --secondary: 215 16% 92%;            /* slate-200 */
+    --secondary-foreground: 222 47% 20%;
+    --muted: 215 16% 92%;                /* slate-200 */
+    --muted-foreground: 215 16% 35%;     /* slate-500 */
+    --accent: 199 89% 48%;               /* cyan-500 */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;               /* slate-200 */
+    --input: 214 32% 96%;
+    --ring: 245 58% 55%;
+    --radius: 0.75rem;
   }
 
   .dark {
-    /* 深色主题 - 温暖的深灰背景 */
-    --background: 222 25% 12%;
-    --foreground: 210 10% 42%;
-    --card: 222 25% 14%;
-    --card-foreground: 210 40% 92%;
-    --popover: 222 25% 14%;
-    --popover-foreground: 210 40% 92%;
-    --primary: 217.2 91.2% 64%;
-    --primary-foreground: 222 25% 12%;
-    --secondary: 217.2 20% 20%;
-    --secondary-foreground: 210 40% 88%;
-    --muted: 217.2 20% 20%;
-    --muted-foreground: 215 15% 70%;
-    --accent: 217.2 20% 22%;
-    --accent-foreground: 210 40% 88%;
-    --destructive: 0 62.8% 55%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 20% 18%;
-    --input: 217.2 20% 22%;
-    --ring: 224.3 76.3% 84%;
+    /* 深色主题 - Navy + Indigo（提亮整体背景与表面，提高对比度） */
+    --background: 222 47% 10%;           /* slate-900 → 更亮 */
+    --foreground: 213 31% 92%;           /* 稍亮的前景 */
+    --card: 222 47% 12%;                 /* 表面提高亮度 */
+    --card-foreground: 213 31% 92%;
+    --popover: 222 47% 12%;
+    --popover-foreground: 213 31% 92%;
+    --primary: 245 77% 66%;              /* 保持品牌主色 */
+    --primary-foreground: 222 47% 10%;
+    --secondary: 215 25% 18%;            /* 次级表面更亮 */
+    --secondary-foreground: 213 31% 88%;
+    --muted: 215 25% 15%;                /* 中性色提高亮度 */
+    --muted-foreground: 217 14% 70%;     /* 提升可读性 */
+    --accent: 199 89% 60%;               /* 保持强调 */
+    --accent-foreground: 222 47% 10%;
+    --destructive: 0 90% 68%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 27% 24%;               /* 边框更清晰 */
+    --input: 217 27% 20%;                /* 输入背景提亮 */
+    --ring: 245 77% 66%;
   }
 }
 
@@ -60,35 +60,42 @@
   }
 }
 
-/* 滚动条样式 */
+/* 滚动条样式 - 优雅细腻 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: 4px;
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 6px;
+  margin: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
-  transition: background-color 0.2s ease;
+  background: linear-gradient(135deg, 
+    hsl(var(--primary) / 0.4), 
+    hsl(var(--primary) / 0.6));
+  border-radius: 6px;
+  border: 2px solid hsl(var(--background));
+  transition: all 0.3s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: linear-gradient(135deg, 
+    hsl(var(--primary) / 0.6), 
+    hsl(var(--primary) / 0.8));
+  border: 1px solid hsl(var(--background));
 }
 
 ::-webkit-scrollbar-corner {
-  background: hsl(var(--muted));
+  background: hsl(var(--muted) / 0.3);
 }
 
 /* Firefox滚动条样式 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) hsl(var(--muted));
+  scrollbar-color: hsl(var(--primary) / 0.5) hsl(var(--muted) / 0.3);
 }
 
 /* 防止滚动条跳动 */
@@ -274,20 +281,20 @@ div .prose mark {
   display: inline !important;
 }
 
-.dark .search-highlight {
-  background-color: #fde047 !important; /* yellow-300 更亮更对比 */
-  color: #1f2937 !important; /* 深灰-900 强制深色 */
+  .dark .search-highlight {
+  background-color: #f59e0b !important; /* yellow-500 更深更稳 */
+  color: #0b1220 !important; /* 极深蓝黑，确保对比 */
 }
 
 /* 确保深色主题下搜索高亮的文字颜色 - 超强选择器 */
-html.dark .search-highlight,
-html.dark mark.search-highlight,
-html.dark .prose .search-highlight,
-body .dark .search-highlight,
-.dark mark.search-highlight[style],
-.dark .search-highlight[style] {
-  background-color: #fde047 !important; /* yellow-300 */
-  color: #1f2937 !important; /* 深灰-900 */
+  html.dark .search-highlight,
+  html.dark mark.search-highlight,
+  html.dark .prose .search-highlight,
+  body .dark .search-highlight,
+  .dark mark.search-highlight[style],
+  .dark .search-highlight[style] {
+  background-color: #d97706 !important; /* yellow-600 更深 */
+  color: #0b1220 !important; /* 极深蓝黑，提升可读性 */
 }
 
 /* 覆盖所有可能的样式继承 */
@@ -296,12 +303,123 @@ body .dark .search-highlight,
 }
 
 /* 终极深色主题搜索高亮修复 */
-html.dark body .search-highlight,
-html.dark body mark.search-highlight,
-html.dark body .prose .search-highlight {
-  background-color: #facc15 !important; /* yellow-400 非常亮的黄色 */
-  color: #000000 !important; /* 纯黑色文字 */
+  html.dark body .search-highlight,
+  html.dark body mark.search-highlight,
+  html.dark body .prose .search-highlight {
+  background-color: #ca8a04 !important; /* yellow-600/700 介于，稳定深黄 */
+  color: #0b1220 !important; /* 更深的文字颜色 */
   padding: 0.125rem 0.25rem !important;
   border-radius: 0.25rem !important;
   font-weight: 600 !important;
+}
+
+/* 美化的全局样式 */
+@layer components {
+  /* 卡片阴影效果 */
+  .enhanced-card {
+    box-shadow: 
+      0 1px 3px 0 hsl(var(--foreground) / 0.1), 
+      0 1px 2px 0 hsl(var(--foreground) / 0.06);
+    backdrop-filter: blur(16px);
+    transition: all 0.3s ease;
+  }
+
+  .dark .enhanced-card {
+    box-shadow: 
+      0 4px 6px -1px hsl(0 0% 0% / 0.3), 
+      0 2px 4px -1px hsl(0 0% 0% / 0.2);
+  }
+
+  /* 按钮美化 */
+  .btn-primary-enhanced {
+    background: linear-gradient(135deg, 
+      hsl(var(--primary)), 
+      hsl(var(--primary) / 0.9));
+    box-shadow: 
+      0 4px 14px 0 hsl(var(--primary) / 0.4);
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary-enhanced:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+      0 6px 20px 0 hsl(var(--primary) / 0.5);
+  }
+
+  /* 输入框美化 */
+  .input-enhanced {
+    background: hsl(var(--background) / 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.6);
+    transition: all 0.3s ease;
+  }
+
+  .input-enhanced:focus {
+    border-color: hsl(var(--primary) / 0.8);
+    box-shadow: 
+      0 0 0 4px hsl(var(--primary) / 0.1),
+      0 2px 8px 0 hsl(var(--primary) / 0.2);
+  }
+
+  /* 侧边栏美化 */
+  .sidebar-enhanced {
+    background: linear-gradient(180deg, 
+      hsl(var(--card)), 
+      hsl(var(--card) / 0.95));
+    backdrop-filter: blur(20px);
+    border-right: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .dark .sidebar-enhanced {
+    background: linear-gradient(180deg, 
+      hsl(var(--card)), 
+      hsl(var(--card) / 0.9));
+  }
+
+  /* 头部美化 */
+  .header-enhanced {
+    background: hsl(var(--background) / 0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  /* 思考过程区域美化 */
+  .thinking-area-enhanced {
+    background: linear-gradient(135deg, 
+      hsl(var(--muted) / 0.3), 
+      hsl(var(--muted) / 0.5));
+    backdrop-filter: blur(8px);
+    border: 1px solid hsl(var(--border) / 0.6);
+  }
+}
+
+/* 动画增强 */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.2s ease-out;
 } 

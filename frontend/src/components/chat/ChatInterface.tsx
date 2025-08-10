@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, FileText, Download, Brain, ChevronDown, ChevronRight, ChevronUp, Eye } from 'lucide-react'
+import { Send, FileText, Download, ChevronDown, ChevronRight, ChevronUp, Eye } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+// removed Input; using native textarea for auto-resize
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ThemeToggle } from '@/components/ui/theme-toggle'
+
 import { apiClient, type Source, type QueryResponse } from '@/lib/api'
 
 interface Message {
@@ -15,7 +15,7 @@ interface Message {
   type: 'user' | 'assistant'
   content: string
   sources?: Source[]
-  timestamp: Date
+  timestamp?: number
   isLoading?: boolean
   thinking?: string
 }
@@ -30,7 +30,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
       id: '1',
       type: 'assistant',
       content: '您好！我是PDF文档智能问答助手。您可以向我提问关于已上传文档的任何问题，我会基于文档内容为您提供准确的答案。\n\n**使用提示：**\n- 提出具体的问题以获得更准确的答案\n- 点击答案中的引用链接可以查看原文档\n- 您可以下载引用的文档进行详细阅读\n- 点击"思考过程"可以查看AI的分析思路',
-      timestamp: new Date(),
+      // 初始消息不带时间，避免SSR与CSR时间不一致
     }
   ])
   const [inputValue, setInputValue] = useState('')
@@ -38,7 +38,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
   const [isInputHidden, setIsInputHidden] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -52,18 +52,20 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
     e.preventDefault()
     if (!inputValue.trim() || isLoading) return
 
+    const now = Date.now()
+
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
       content: inputValue.trim(),
-      timestamp: new Date(),
+      timestamp: now,
     }
 
     const loadingMessage: Message = {
       id: (Date.now() + 1).toString(),
       type: 'assistant',
       content: 'thinking',
-      timestamp: new Date(),
+      timestamp: now,
       isLoading: true,
     }
 
@@ -94,7 +96,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
         content: response.answer,
         sources: response.sources,
         thinking: thinking || undefined,
-        timestamp: new Date(),
+        timestamp: Date.now(),
       }
 
       setMessages(prev => prev.slice(0, -1).concat([assistantMessage]))
@@ -103,7 +105,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
         id: (Date.now() + 2).toString(),
         type: 'assistant',
         content: `抱歉，查询时出现错误：${error instanceof Error ? error.message : '未知错误'}`,
-        timestamp: new Date(),
+        timestamp: Date.now(),
       }
       setMessages(prev => prev.slice(0, -1).concat([errorMessage]))
     } finally {
@@ -111,7 +113,18 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  // 自适应高度
+  const autoResizeTextarea = (el: HTMLTextAreaElement | null) => {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px' // 上限约为10行（具体取决于line-height）
+  }
+
+  useEffect(() => {
+    autoResizeTextarea(inputRef.current)
+  }, [inputValue])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e as any)
@@ -132,29 +145,13 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
 
   return (
     <div className="h-full flex flex-col bg-background transition-all duration-300">
-      {/* 头部 - 占满页面宽度 */}
-      <div className="w-full border-b border-border/50 bg-card p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 bg-primary rounded-lg">
-              <Brain className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-foreground">法规智能问答</h1>
-              <p className="text-sm text-muted-foreground">基于AI的文档问答系统</p>
-            </div>
-          </div>
-          <ThemeToggle />
-        </div>
-      </div>
-
       {/* 消息列表 */}
-      <div className="flex-1 scroll-container p-4 space-y-4 max-w-4xl mx-auto w-full">
+      <div className="flex-1 scroll-container p-6 space-y-4 w-full overflow-y-auto">
         {messages.map((message) => (
           <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[80%] ${message.type === 'user' ? 'order-2' : 'order-1'}`}>
-              <Card className={`chat-message ${message.type === 'user' 
-                ? 'bg-primary text-primary-foreground' 
+              <Card className={`chat-message enhanced-card animate-fade-in ${message.type === 'user' 
+                ? 'bg-primary/10 text-foreground dark:bg-primary dark:text-primary-foreground border border-primary/20' 
                 : 'bg-card dark:bg-transparent'} ${message.isLoading ? 'animate-pulse' : ''}`}>
                 <CardContent className="px-4 py-3">
                   <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-p:first:mt-0 prose-p:last:mb-0 prose-headings:my-2 prose-ul:my-2 prose-ol:my-2">
@@ -171,19 +168,21 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
                         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group"
                         title={expandedThinking.has(message.id) ? "隐藏思考过程" : "查看AI思考过程"}
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-4 h-4" /> 
+                        thinking message
+                        
                         {/* {expandedThinking.has(message.id) ? (
                           <ChevronDown className="w-3 h-3" />
                         ) : (
                           <ChevronRight className="w-3 h-3" />
                         )} */}
-                        <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          Check thinking
-                        </span>
+                        {/* <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          Show
+                        </span> */}
                       </button>
                       
                       {expandedThinking.has(message.id) && (
-                        <div className="mt-2 p-3 bg-muted/50 rounded-md border border-border/20 transition-all duration-200">
+                        <div className="mt-2 p-3 thinking-area-enhanced rounded-md transition-all duration-200">
                           <div className="prose prose-sm max-w-none dark:prose-invert text-muted-foreground scroll-container max-h-96 prose-p:my-2 prose-p:first:mt-0 prose-p:last:mb-0 prose-headings:my-2">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {message.thinking}
@@ -244,9 +243,12 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
                   )}
                 </CardContent>
               </Card>
-              <div className="text-xs text-muted-foreground mt-1 px-1">
-                {message.timestamp.toLocaleTimeString()}
-              </div>
+              {/* 时间戳显示（可选） */}
+              {message.timestamp && (
+                <div className="text-xs text-muted-foreground mt-1 px-1">
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -274,25 +276,29 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
         {/* 输入框区域 */}
         {!isInputHidden && (
           <div className="px-6 pb-6 pt-2">
-            <form onSubmit={handleSubmit} className="flex gap-3 max-w-4xl mx-auto">
-              <Input
+            <form onSubmit={handleSubmit} className="flex gap-3 px-4">
+              <textarea
                 ref={inputRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onChange={(e) => {
+                  setInputValue(e.target.value)
+                  autoResizeTextarea(e.target)
+                }}
+                onKeyDown={handleKeyDown}
                 placeholder="输入您的问题..."
                 disabled={isLoading}
-                className="flex-1 border-border/30 bg-background/80 backdrop-blur-sm rounded-xl px-4 py-3 text-sm placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-200"
+                rows={1}
+                className="flex-1 input-enhanced rounded-xl px-4 py-3 text-sm placeholder:text-muted-foreground/60 focus:outline-none max-h-40 overflow-y-auto"
               />
               <Button 
                 type="submit" 
                 disabled={!inputValue.trim() || isLoading}
-                className="rounded-xl px-4 py-3 bg-primary hover:bg-primary/90 transition-all duration-200 shadow-sm"
+                className="btn-primary-enhanced rounded-xl px-4 py-3"
               >
                 <Send className="w-4 h-4" />
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground/60 mt-3 text-center max-w-4xl mx-auto">
+            <p className="text-xs text-muted-foreground/60 mt-3 text-center px-4">
               Enter 发送 • Shift + Enter 换行
             </p>
           </div>
