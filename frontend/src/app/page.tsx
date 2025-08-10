@@ -93,55 +93,46 @@ export default function Home() {
           </div>
         </div>
 
-        {isDocumentViewerOpen ? (
-          <>
-            {/* 中间聊天区域 */}
-            <div className="flex-1 transition-all duration-300 ease-in-out">
-              <div className="h-full">
-                <ChatInterface onSourceClick={handleSourceClick} />
-              </div>
-            </div>
-            {/* 右侧文档查看器（固定占位） */}
-            <div className="w-1/3 border-l border-border overflow-hidden relative">
-              {!isDocumentViewerCollapsed ? (
-                <>
-                  <button
-                    className="absolute top-2 right-2 w-9 h-9 flex items-center justify-center rounded hover:bg-muted transition-colors z-10"
-                    onClick={handleCollapseDocumentViewer}
-                    title="折叠"
-                  >
-                    <ChevronsRight className="w-4 h-4" />
-                  </button>
-                  <DocumentViewer
-                    currentDocument={currentDocument}
-                    currentChunkId={currentChunkId}
-                    onCollapse={handleCollapseDocumentViewer}
-                  />
-                </>
-              ) : (
-                <>
-                  <button
-                    className="absolute top-2 right-2 w-9 h-9 flex items-center justify-center rounded hover:bg-muted transition-colors z-10"
-                    onClick={handleExpandDocumentViewer}
-                    title="展开"
-                  >
-                    <ChevronsLeft className="w-4 h-4" />
-                  </button>
-                  <div className="h-full w-full bg-card/50" />
-                </>
-              )}
-            </div>
-          </>
-        ) : (
-          // 预览隐藏时：聊天区域在剩余空间内居中，宽度保持不变
-          <div className="flex-1 flex justify-center items-stretch">
-            <div className="w-full max-w-4xl flex flex-col p-4">
-              <div className="flex-1">
-                <ChatInterface onSourceClick={handleSourceClick} />
-              </div>
-            </div>
+        {/* 中间聊天区域：始终渲染，避免状态丢失 */}
+        <div className="flex-1 transition-all duration-300 ease-in-out">
+          <div className={isDocumentViewerOpen ? 'h-full' : 'h-full max-w-4xl mx-auto p-4'}>
+            <ChatInterface onSourceClick={handleSourceClick} />
+          </div>
+        </div>
+
+        {/* 右侧文档查看器（仅在开启时显示） */}
+        {isDocumentViewerOpen && (
+          <div className="w-1/3 border-l border-border overflow-hidden relative">
+            {!isDocumentViewerCollapsed ? (
+              <>
+                <button
+                  className="absolute top-2 right-2 w-9 h-9 flex items-center justify-center rounded hover:bg-muted transition-colors z-10"
+                  onClick={handleCollapseDocumentViewer}
+                  title="折叠"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+                <DocumentViewer
+                  currentDocument={currentDocument}
+                  currentChunkId={currentChunkId}
+                  onCollapse={handleCollapseDocumentViewer}
+                />
+              </>
+            ) : (
+              <>
+                <button
+                  className="absolute top-2 right-2 w-9 h-9 flex items-center justify-center rounded hover:bg-muted transition-colors z-10"
+                  onClick={handleExpandDocumentViewer}
+                  title="展开"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <div className="h-full w-full bg-card/50" />
+              </>
+            )}
           </div>
         )}
+        
       </div>
     </div>
   )
