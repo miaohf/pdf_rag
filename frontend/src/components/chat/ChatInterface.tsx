@@ -204,37 +204,16 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
                             <CardContent className="p-3">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-2">
+                                  <div className="flex items-center gap-2 mb-1">
                                     <FileText className="w-4 h-4 text-primary" />
                                     <span className="text-sm font-medium truncate">
                                       {source.filename}
                                     </span>
-                                    <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
-                                      相似度: {(source.similarity * 100).toFixed(1)}%
-                                    </span>
                                   </div>
-                                  <p className="text-xs text-muted-foreground line-clamp-2">
-                                    {source.content_preview}
-                                  </p>
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => onSourceClick(source.filename, source.chunk_id)}
-                                    className="h-8 px-2 bg-transparent hover:bg-transparent"
-                                    title="查看原文档"
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => window.open(apiClient.getDownloadUrl(source.filename), '_blank')}
-                                    className="h-8 px-2 bg-transparent hover:bg-transparent"
-                                  >
-                                    <Download className="w-3 h-3" />
-                                  </Button>
+                                  <div className="text-xs text-muted-foreground">
+                                    <span className="mr-3">分片ID: {source.chunk_id}</span>
+                                    <span>相似度: {source.similarity.toFixed(3)}</span>
+                                  </div>
                                 </div>
                               </div>
                             </CardContent>

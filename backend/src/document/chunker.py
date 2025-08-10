@@ -18,18 +18,12 @@ logger = get_logger(__name__)
 @dataclass
 class Chunk:
     """文档片段"""
-    content: str  # 纯文本内容
+    content: str  # 分片内容（保留原始格式）
     index: int
     start_pos: int
     end_pos: int
     metadata: Dict[str, Any]
-    original_content: Optional[str] = None  # 保留格式的原始内容，可选
     parent_chunk_id: Optional[str] = None
-    
-    def __post_init__(self):
-        """后处理：如果original_content为空，则设为content"""
-        if self.original_content is None:
-            self.original_content = self.content
 
 
 class DocumentChunker:
@@ -45,9 +39,11 @@ class DocumentChunker:
         self.config = config
         self.chunk_size = config.document.chunk_size
         self.chunk_overlap = config.document.chunk_overlap
+        self.parent_chunk_size = getattr(config.document, 'parent_chunk_size', self.chunk_size * 3)
+        self.use_hierarchical_chunking = getattr(config.document, 'use_hierarchical_chunking', False)
         self.max_chunks = config.document.max_chunks_per_document
         
-        logger.info(f"初始化文档分片器: 片段大小={self.chunk_size}, 重叠={self.chunk_overlap}")
+        logger.info(f"初始化文档分片器: 子分片大小={self.chunk_size}, 父分片大小={self.parent_chunk_size}, 重叠={self.chunk_overlap}, 层级分片={self.use_hierarchical_chunking}")
     
     def chunk_by_sentences(self, text: str, original_text: Optional[str] = None) -> List[Chunk]:
         """
@@ -62,6 +58,10 @@ class DocumentChunker:
         # 使用配置的片段大小，对技术文档稍作调整
         effective_chunk_size = self.chunk_size
         effective_overlap = self.chunk_overlap
+        
+        # 如果是父子分片模式，子分片使用较小的尺寸以提高精度
+        if self.use_hierarchical_chunking:
+            logger.debug(f"使用层级分片模式，子分片大小: {effective_chunk_size}")
         
         # 简化的分片策略：按行处理，保持编号项目完整
         lines = text.split('\n')
@@ -90,8 +90,7 @@ class DocumentChunker:
                 
                 # 保存当前片段
                 chunk = Chunk(
-                    content=cleaned_chunk_content,  # 清理后的文本用于向量匹配
-                    original_content=current_original_chunk.strip(),  # 原始格式用于显示
+                    content=current_original_chunk.strip(),  # 保留原始格式的内容
                     index=chunk_index,
                     start_pos=current_start,
                     end_pos=current_start + len(current_chunk),
@@ -142,8 +141,7 @@ class DocumentChunker:
             cleaned_chunk_content = clean_text_for_technical_docs(current_chunk.strip())
             
             chunk = Chunk(
-                content=cleaned_chunk_content,  # 清理后的文本用于向量匹配
-                original_content=current_original_chunk.strip(),  # 原始格式用于显示
+                content=current_original_chunk.strip(),  # 保留原始格式的内容
                 index=chunk_index,
                 start_pos=current_start,
                 end_pos=current_start + len(current_chunk),
@@ -188,8 +186,7 @@ class DocumentChunker:
                 # 保存当前片段
                 cleaned_content = clean_text_for_technical_docs(current_chunk.strip())
                 chunk = Chunk(
-                    content=cleaned_content,
-                    original_content=current_chunk.strip(),  # 使用未清理的文本作为original_content
+                    content=current_chunk.strip(),  # 保留原始格式的内容
                     index=chunk_index,
                     start_pos=current_start,
                     end_pos=current_start + len(current_chunk),
@@ -225,8 +222,7 @@ class DocumentChunker:
         if current_chunk.strip() and chunk_index < self.max_chunks:
             cleaned_content = clean_text_for_technical_docs(current_chunk.strip())
             chunk = Chunk(
-                content=cleaned_content,
-                original_content=current_chunk.strip(),
+                content=current_chunk.strip(),  # 保留原始格式的内容
                 index=chunk_index,
                 start_pos=current_start,
                 end_pos=current_start + len(current_chunk),
@@ -270,8 +266,7 @@ class DocumentChunker:
             if chunk_text:
                 cleaned_content = clean_text_for_technical_docs(chunk_text)
                 chunk = Chunk(
-                    content=cleaned_content,
-                    original_content=chunk_text,  # 使用未清理的文本作为original_content
+                    content=chunk_text,  # 保留原始格式的内容
                     index=chunk_index,
                     start_pos=start_pos,
                     end_pos=end_pos,
@@ -349,37 +344,64 @@ class DocumentChunker:
         logger.info(f"文档分片完成: 生成 {len(chunks)} 个片段")
         return chunks
     
-    def create_parent_child_chunks(self, text: str, parent_size: Optional[int] = None) -> Dict[str, List[Chunk]]:
+    def create_parent_child_chunks(self, text: str, original_text: Optional[str] = None, parent_size: Optional[int] = None) -> Dict[str, List[Chunk]]:
         """
         创建父子文档片段
         
         Args:
             text: 文本内容
-            parent_size: 父片段大小，默认为chunk_size的3倍
+            original_text: 原始文本内容（可选）
+            parent_size: 父片段大小，默认使用配置值
             
         Returns:
             包含父片段和子片段的字典
         """
         if parent_size is None:
-            parent_size = self.chunk_size * 3
+            parent_size = self.parent_chunk_size
         
-        # 创建父片段
+        # 创建父片段（使用智能分片策略而非固定大小）
         old_chunk_size = self.chunk_size
+        old_overlap = self.chunk_overlap
+        
+        # 临时调整为父分片参数
         self.chunk_size = parent_size
-        parent_chunks = self.chunk_by_fixed_size(text)
+        self.chunk_overlap = int(parent_size * 0.1)  # 父分片10%重叠
+        parent_chunks = self.smart_chunk(text, strategy="auto")
+        
+        # 恢复原始参数
         self.chunk_size = old_chunk_size
+        self.chunk_overlap = old_overlap
         
         # 为每个父片段创建子片段
         child_chunks = []
         
-        for parent_chunk in parent_chunks:
-            children = self.smart_chunk(parent_chunk.content)
+        for parent_idx, parent_chunk in enumerate(parent_chunks):
+            # 为父分片添加层级标识
+            parent_chunk.metadata.update({
+                'chunk_level': 'parent',
+                'hierarchy_level': 2,
+                'child_count': 0  # 稍后更新
+            })
             
-            # 设置父子关系
-            for child in children:
-                child.parent_chunk_id = f"parent_{parent_chunk.index}"
-                child.index = len(child_chunks)  # 重新编号
+            # 从父分片中创建子分片
+            children = self.smart_chunk(parent_chunk.content, strategy="auto")
+            
+            # 设置父子关系和元数据
+            for child_idx, child in enumerate(children):
+                child.parent_chunk_id = parent_chunk.metadata.get('chunk_id', f"parent_{parent_idx}")
+                child.index = len(child_chunks)  # 全局重新编号
+                child.metadata.update({
+                    'chunk_level': 'child',
+                    'hierarchy_level': 1,
+                    'parent_index': parent_idx,
+                    'child_sequence': child_idx,
+                    'chunk_id': f"child_{len(child_chunks)}"
+                })
                 child_chunks.append(child)
+            
+            # 更新父分片的子分片数量
+            parent_chunk.metadata['child_count'] = len(children)
+            parent_chunk.metadata['chunk_id'] = f"parent_{parent_idx}"
         
         logger.info(f"创建父子片段: {len(parent_chunks)} 个父片段, {len(child_chunks)} 个子片段")
         

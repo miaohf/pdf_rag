@@ -54,9 +54,11 @@ class EmbeddingConfig(BaseModel):
 
 class DocumentConfig(BaseModel):
     """文档处理配置"""
-    chunk_size: int = 600
-    chunk_overlap: int = 100
+    chunk_size: int = 300              # 子分片大小，从600减少到300
+    chunk_overlap: int = 60             # 重叠大小，保持20%重叠比例
+    parent_chunk_size: int = 800        # 父分片大小，新增配置
     max_chunks_per_document: int = 200
+    use_hierarchical_chunking: bool = True  # 启用父子分片
 
 
 class RetrievalConfig(BaseModel):
@@ -72,6 +74,18 @@ class LoggingConfig(BaseModel):
     level: str = "INFO"
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     file: str = "logs/pdf_rag.log"
+    enable_llm_verbose: bool = True  # 是否打印LLM详细报文
+    llm_max_log_chars: int = 4000    # LLM报文最大打印字符数
+    llm_redact_keys: list[str] = [   # 需要屏蔽的字段（包含大数组/向量）
+        "context", "embedding", "embeddings", "kv", "token_ids",
+        "eval", "prompt_eval", "vectors", "vector", "chunks"
+    ]
+    llm_hide_text_in_structured: bool = True  # 结构化日志中隐藏prompt/response，避免与pretty重复
+    # 彩色输出
+    enable_color: bool = True
+    color_prompt: str = "\033[36m"    # 青色
+    color_response: str = "\033[32m"  # 绿色
+    color_reset: str = "\033[0m"
 
 
 class Settings(BaseSettings):

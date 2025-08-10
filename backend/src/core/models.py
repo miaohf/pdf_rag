@@ -45,8 +45,7 @@ class DocumentChunk(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     document_id = Column(String(36), ForeignKey('documents.id', ondelete='CASCADE'), nullable=False)
-    content = Column(Text, nullable=False)  # 纯文本内容，用于向量检索
-    original_content = Column(Text)  # 保留Markdown格式的原始内容，用于前端高亮匹配
+    content = Column(Text, nullable=False)  # 保留原始格式的内容（用于检索与显示）
     chunk_index = Column(Integer, nullable=False)
     start_char = Column(Integer)
     end_char = Column(Integer)
@@ -65,7 +64,7 @@ class DocumentVector(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     chunk_id = Column(String(36), ForeignKey('document_chunks.id', ondelete='CASCADE'), nullable=False)
-    embedding = Column(Vector(768))  # 768维向量
+    embedding = Column(Vector(1024))  # 768维向量
     created_time = Column(TIMESTAMP, default=func.now())
     updated_time = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
     

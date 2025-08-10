@@ -170,9 +170,27 @@ export default function DocumentViewer({
 
 
   const isHighlightedLine = (lineNumber: number) => {
-    if (!currentDocument.highlight_info) return false
-    return lineNumber >= currentDocument.highlight_info.start_line && 
-           lineNumber <= currentDocument.highlight_info.end_line
+    if (!currentDocument?.highlight_info) return false
+
+    const hi: any = (currentDocument as any).highlight_info
+    // 优先使用字符区间推导行号
+    if (typeof hi.char_start === 'number' && typeof hi.char_end === 'number') {
+      const content = currentDocument.content || ''
+      // 计算 start_line/end_line（与后端一致：按'\n'计数，1-based）
+      const start = Math.max(0, Math.min(content.length, hi.char_start))
+      const end = Math.max(start, Math.min(content.length, hi.char_end))
+      let sLines = 1
+      for (let i = 0; i < start; i++) if (content.charCodeAt(i) === 10) sLines++
+      let eLines = sLines
+      for (let i = start; i < end; i++) if (content.charCodeAt(i) === 10) eLines++
+      return lineNumber >= sLines && lineNumber <= eLines
+    }
+
+    // 回退使用后端的行号
+    return (
+      lineNumber >= currentDocument.highlight_info.start_line &&
+      lineNumber <= currentDocument.highlight_info.end_line
+    )
   }
 
   return (
@@ -275,14 +293,22 @@ export default function DocumentViewer({
             <div className="prose prose-sm max-w-4xl dark:prose-invert">
               {(() => {
                 const content = currentDocument.content || ''
-                // 备选1：后端提供字符范围（优先）
-                const startChar = (currentDocument as any)?.chunk_info?.start_char
-                const endChar = (currentDocument as any)?.chunk_info?.end_char
+                // 优先使用 highlight_info 的字符区间
+                const hi = (currentDocument as any)?.highlight_info as any
+                let start = typeof hi?.char_start === 'number' ? hi.char_start : -1
+                let end = typeof hi?.char_end === 'number' ? hi.char_end : -1
+
+                // 备选1：后端在chunk_info中返回了字符区间
+                if ((start < 0 || end <= start) && (currentDocument as any)?.chunk_info) {
+                  const startChar = (currentDocument as any)?.chunk_info?.start_char
+                  const endChar = (currentDocument as any)?.chunk_info?.end_char
+                  if (typeof startChar === 'number' && typeof endChar === 'number' && endChar > startChar) {
+                    start = startChar
+                    end = endChar
+                  }
+                }
 
                 // 备选2：没有字符范围，则通过chunk内容在全文中定位
-                let start = typeof startChar === 'number' ? startChar : -1
-                let end = typeof endChar === 'number' ? endChar : -1
-
                 if ((start < 0 || end <= start) && currentDocument.chunk_info?.content) {
                   const cleanFull = content
                   const cleanChunk = currentDocument.chunk_info.content.trim()

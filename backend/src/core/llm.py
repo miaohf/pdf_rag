@@ -158,6 +158,14 @@ class LLMClient:
                 }
             }
             
+            # 详细报文打印（受开关控制）
+            try:
+                if getattr(self.config.logging, 'enable_llm_verbose', False):
+                    logger.info("LLM 请求报文:\n" + self._safe_dump(request_data))
+                    logger.info(self._pretty_text(prompt, "LLM Prompt", kind='prompt'))
+            except Exception:
+                pass
+            
             logger.debug(f"发送LLM请求: {len(prompt)} 字符")
             
             response = self.client.post(
@@ -169,6 +177,14 @@ class LLMClient:
             if response.status_code == 200:
                 result = response.json()
                 generated_text = result.get('response', '')
+                
+                # 打印响应（受开关控制）
+                try:
+                    if getattr(self.config.logging, 'enable_llm_verbose', False):
+                        logger.info("LLM 响应报文:\n" + self._safe_dump(result))
+                        logger.info(self._pretty_text(generated_text, "LLM Response", kind='response'))
+                except Exception:
+                    pass
                 
                 logger.info(f"LLM生成完成: {len(generated_text)} 字符")
                 return generated_text
@@ -211,6 +227,12 @@ class LLMClient:
                 }
             }
             
+            try:
+                if getattr(self.config.logging, 'enable_llm_verbose', False):
+                    logger.info("LLM 流式请求报文:\n" + self._safe_dump(request_data))
+            except Exception:
+                pass
+            
             logger.debug(f"发送流式LLM请求: {len(prompt)} 字符")
             
             with self.client.stream(
@@ -218,22 +240,26 @@ class LLMClient:
                 f"{self.api_url}/api/generate",
                 json=request_data,
                 timeout=self.timeout
-            ) as response:
-                
-                if response.status_code != 200:
-                    yield f"错误: {response.status_code}"
+            ) as resp:
+                if resp.status_code != 200:
+                    logger.error(f"LLM 流式API调用失败: {resp.status_code}")
                     return
-                
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            data = json.loads(line)
-                            if 'response' in data:
-                                chunk = data['response']
-                                if chunk:
-                                    yield chunk
-                        except json.JSONDecodeError:
-                            continue
+                collected = []
+                for chunk in resp.iter_lines():
+                    if not chunk:
+                        continue
+                    text = chunk.decode('utf-8', errors='ignore')
+                    collected.append(text)
+                    yield text
+                try:
+                    if getattr(self.config.logging, 'enable_llm_verbose', False):
+                        sample = "\n".join(collected[:10])
+                        max_len = getattr(self.config.logging, 'llm_max_log_chars', 4000)
+                        if len(sample) > max_len:
+                            sample = sample[:max_len] + f"\n<... truncated {len(sample)-max_len} chars>"
+                        logger.info("LLM 流式响应(拼接前)样本:\n" + sample)
+                except Exception:
+                    pass
                 
                 logger.info("流式LLM生成完成")
                 
@@ -511,3 +537,57 @@ class LLMClient:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close() 
+
+    def _safe_dump(self, data: dict) -> str:
+        """将字典安全序列化为可打印字符串，屏蔽大字段并截断长度"""
+        try:
+            import copy, json as _json
+            redacted = copy.deepcopy(data)
+            # 可选：隐藏文本型字段，避免与pretty重复
+            if getattr(self.config.logging, 'llm_hide_text_in_structured', True):
+                if isinstance(redacted, dict):
+                    if 'prompt' in redacted:
+                        redacted['prompt'] = '<hidden; see LLM Prompt>'
+                    if 'response' in redacted:
+                        redacted['response'] = '<hidden; see LLM Response>'
+            redact_keys = set(getattr(self.config.logging, 'llm_redact_keys', []) or [])
+            # 递归屏蔽
+            def _walk(obj):
+                if isinstance(obj, dict):
+                    for k in list(obj.keys()):
+                        if k in redact_keys:
+                            obj[k] = "<redacted>"
+                        else:
+                            obj[k] = _walk(obj[k])
+                elif isinstance(obj, list):
+                    # 对超大列表，仅保留前N项提示
+                    if len(obj) > 10:
+                        return obj[:3] + ["...", f"<{len(obj)-6} items omitted>", "..."] + obj[-3:]
+                return obj
+            redacted = _walk(redacted)
+            s = _json.dumps(redacted, ensure_ascii=False, indent=2)
+            max_len = getattr(self.config.logging, 'llm_max_log_chars', 4000)
+            if len(s) > max_len:
+                s = s[:max_len] + f"\n<... truncated {len(s)-max_len} chars>"
+            return s
+        except Exception as e:
+            return f"<failed to dump: {e}>"
+
+    def _pretty_text(self, text: str, title: str, kind: str = "") -> str:
+        """将长文本按配置截断并美化显示，支持彩色输出(kind: prompt|response)。"""
+        try:
+            max_len = getattr(self.config.logging, 'llm_max_log_chars', 4000)
+            s = text or ""
+            if len(s) > max_len:
+                s = s[:max_len] + f"\n<... truncated {len(text)-max_len} chars>"
+            enable_color = getattr(self.config.logging, 'enable_color', True)
+            if enable_color and kind:
+                if kind == 'prompt':
+                    c = getattr(self.config.logging, 'color_prompt', "\033[36m")
+                else:
+                    c = getattr(self.config.logging, 'color_response', "\033[32m")
+                r = getattr(self.config.logging, 'color_reset', "\033[0m")
+                return f"\n{c}===== {title} (len={len(text)}) =====\n{s}\n===== /{title} ====={r}"
+            return f"\n===== {title} (len={len(text)}) =====\n{s}\n===== /{title} ====="
+        except Exception as e:
+            return f"<failed to pretty print {title}: {e}>" 

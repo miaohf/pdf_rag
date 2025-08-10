@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Backgroun
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
+import re
 
 from src.utils.config import Config
 from src.utils.logger import Logger, get_logger
@@ -443,7 +444,7 @@ async def preview_document(
                     chunk_info = {
                         'id': chunk.id,
                         'content': chunk.content,
-                        'original_content': getattr(chunk, 'original_content', chunk.content),
+                        'original_content': None,  # 已移除，保持向后兼容：不再返回原始字段
                         'start_line': getattr(chunk, 'start_line', None),
                         'end_line': getattr(chunk, 'end_line', None),
                         'start_char': getattr(chunk, 'start_char', None),
@@ -460,42 +461,77 @@ async def preview_document(
                         
                         # 如果精确匹配失败，尝试找到chunk中的关键句子
                         if chunk_start_pos == -1:
-                            # 分割chunk为行，尝试找到第一行和最后一行
-                            chunk_lines = chunk_text.split('\n')
+                            # 进行首行+容错匹配
+                            chunk_lines = [l for l in chunk_text.split('\n') if l.strip()]
                             if chunk_lines:
                                 first_line = chunk_lines[0].strip()
-                                if first_line and len(first_line) > 10:  # 确保行足够长
-                                    chunk_start_pos = full_content.find(first_line)
-                                    if chunk_start_pos != -1:
-                                        # 找到起始位置，计算结束位置
-                                        last_line = chunk_lines[-1].strip() if len(chunk_lines) > 1 else first_line
-                                        last_line_pos = full_content.find(last_line, chunk_start_pos)
-                                        if last_line_pos != -1:
-                                            chunk_end_pos = last_line_pos + len(last_line)
+                                # 允许多空格/多空白的容错匹配
+                                def normalize(s: str) -> str:
+                                    return re.sub(r"\s+", " ", s.strip())
+                                norm_full = normalize(full_content)
+                                norm_first = normalize(first_line)
+                                pos_norm = norm_full.find(norm_first)
+                                if pos_norm != -1:
+                                    # 将规范化位置映射回原文大致位置：用原文中第一行前20字符作锚
+                                    anchor = first_line[:20]
+                                    if anchor:
+                                        anchor_pos = full_content.find(anchor)
+                                        if anchor_pos != -1:
+                                            chunk_start_pos = anchor_pos
+                                if chunk_start_pos == -1:
+                                    # 再次退化：在原文中搜索首行去除多空白的正则近似
+                                    pattern = re.escape(re.sub(r"\s+", " ", first_line))
+                                    m = re.search(pattern, re.sub(r"\s+", " ", full_content))
+                                    if m:
+                                        # 近似位置映射：以原文中首个非空白字符位置为起点搜索原始首行部分
+                                        approx_anchor = first_line[:15]
+                                        anchor_pos = full_content.find(approx_anchor)
+                                        if anchor_pos != -1:
+                                            chunk_start_pos = anchor_pos
+                                # 估算结束位置
+                                if chunk_start_pos != -1:
+                                    if len(chunk_lines) > 1:
+                                        last_line = chunk_lines[-1].strip()
+                                        last_pos = full_content.find(last_line, chunk_start_pos)
+                                        if last_pos != -1:
+                                            chunk_end_pos = last_pos + len(last_line)
                                         else:
                                             chunk_end_pos = chunk_start_pos + len(first_line)
-                        
+                                    else:
+                                        chunk_end_pos = chunk_start_pos + len(first_line)
+ 
                         if chunk_start_pos != -1:
-                            # 计算起始和结束行号
-                            content_before_chunk = full_content[:chunk_start_pos]
-                            start_line = content_before_chunk.count('\n') + 1
-                            
-                            # 找到chunk结束位置
+                            # 计算起始和结束行号（严格基于原文换行数）
+                            start_line = full_content.count('\n', 0, chunk_start_pos) + 1
                             if 'chunk_end_pos' not in locals():
                                 chunk_end_pos = chunk_start_pos + len(chunk_text)
-                            
-                            content_to_end = full_content[:chunk_end_pos]
-                            end_line = content_to_end.count('\n') + 1
-                            
+                            end_line = full_content.count('\n', 0, chunk_end_pos) + 1
                             highlight_info = {
                                 'start_line': start_line,
                                 'end_line': end_line,
-                                'text': chunk_text[:100] + '...' if len(chunk_text) > 100 else chunk_text
+                                'text': chunk_text[:100] + '...' if len(chunk_text) > 100 else chunk_text,
+                                'char_start': chunk_start_pos,
+                                'char_end': chunk_end_pos
                             }
-                            
-                            logger.info(f"计算高亮范围: {start_line}-{end_line}行")
                         else:
-                            logger.warning(f"无法在完整文档中找到chunk内容: {chunk_text[:50]}...")
+                            # 回退：使用数据库记录的字符偏移计算行号
+                            try:
+                                sc = getattr(chunk, 'start_char', None)
+                                ec = getattr(chunk, 'end_char', None)
+                                if isinstance(sc, int) and isinstance(ec, int) and 0 <= sc < len(full_content) and sc < ec <= len(full_content):
+                                    start_line = full_content.count('\n', 0, sc) + 1
+                                    end_line = full_content.count('\n', 0, ec) + 1
+                                    highlight_info = {
+                                        'start_line': start_line,
+                                        'end_line': end_line,
+                                        'text': chunk_text[:100] + '...' if len(chunk_text) > 100 else chunk_text,
+                                        'char_start': sc,
+                                        'char_end': ec
+                                    }
+                                else:
+                                    logger.warning(f"无法在完整文档中找到chunk内容，且偏移无效: {chunk_text[:50]}...")
+                            except Exception:
+                                logger.warning(f"无法在完整文档中找到chunk内容: {chunk_text[:50]}...")
                     
                     logger.info(f"返回完整文档内容，长度: {len(full_content)}")
         
@@ -626,7 +662,6 @@ async def get_chunk_detail(
                     c.document_id,
                     c.chunk_index,
                     c.content,
-                    c.original_content,
                     c.start_char,
                     c.end_char,
                     c.metadata,
@@ -649,7 +684,6 @@ async def get_chunk_detail(
                 "document_title": chunk.title,
                 "chunk_index": chunk.chunk_index,
                 "content": chunk.content,
-                "original_content": chunk.original_content,
                 "start_char": chunk.start_char,
                 "end_char": chunk.end_char,
                 "metadata": chunk.metadata or {}

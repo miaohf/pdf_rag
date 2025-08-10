@@ -19,17 +19,19 @@ ollama:
 
 # 嵌入模型配置
 embedding:
-  model: "nomic-embed-text:latest"
+  model: "bge-m3:latest"
   batch_size: 64
   max_length: 1024
   api_url: "http://127.0.0.1:11434"
   use_remote_api: true
 
-# 文档处理配置 - 优化分片参数
+# 文档处理配置 - 父子分片优化参数
 document:
-  chunk_size: 600      # 减小片段大小，更适合精确检索
-  chunk_overlap: 100   # 减小重叠，避免冗余
+  chunk_size: 300                    # 子分片大小，提高检索精度
+  chunk_overlap: 60                  # 重叠大小，保持20%重叠比例
+  parent_chunk_size: 800             # 父分片大小，保持语义完整性
   max_chunks_per_document: 200
+  use_hierarchical_chunking: true    # 启用父子分片
 
 # 向量检索配置
 retrieval:
@@ -42,4 +44,7 @@ retrieval:
 logging:
   level: INFO
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "logs/pdf_rag.log" 
+  file: "logs/pdf_rag.log"
+  enable_llm_verbose: true 
+  llm_max_log_chars: 4000
+  llm_redact_keys: ["embedding", "embeddings", "token_ids", "vectors", "kv"] 

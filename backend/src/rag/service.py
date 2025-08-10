@@ -33,26 +33,32 @@ class RAGService:
         from src.core.embeddings import EmbeddingModel
         from src.core.llm import LLMClient
         from src.core.vector_store import VectorStore
+        from src.core.hierarchical_retriever import HierarchicalRetriever
         from src.rag.agentic_engine import AgenticRAGEngine
         from src.rag.tools import ToolManager
         from src.rag.conversation import ConversationManager, MultiTurnRagProcessor
+        from src.rag.content_filter import HybridContentFilter
         
         try:
             self.embedding_model = EmbeddingModel(config)
             self.llm_client = LLMClient(config)
             self.vector_store = VectorStore(config, self.db, self.embedding_model)
+            self.hierarchical_retriever = HierarchicalRetriever(config, self.db, self.vector_store, self.embedding_model)
+            self.content_filter = HybridContentFilter(config, self.embedding_model)
             self.agentic_engine = AgenticRAGEngine(config)
             self.tool_manager = ToolManager(config, self.vector_store)
             self.conversation_manager = ConversationManager(config, self.db)
             self.multi_turn_processor = MultiTurnRagProcessor(self.conversation_manager)
             
-            logger.info("RAG服务初始化完成（包含Agentic引擎、工具调用、多轮对话）")
+            logger.info("RAG服务初始化完成（包含父子分片检索、智能过滤、Agentic引擎、工具调用、多轮对话）")
         except Exception as e:
             logger.error(f"RAG服务初始化失败: {e}")
             # 创建模拟组件以保证系统可运行
             self.embedding_model = None
             self.llm_client = None
             self.vector_store = None
+            self.hierarchical_retriever = None
+            self.content_filter = None
             self.agentic_engine = AgenticRAGEngine(config)
             self.tool_manager = ToolManager(config, None)
             self.conversation_manager = ConversationManager(config, self.db)
@@ -75,18 +81,24 @@ class RAGService:
         
         try:
             # 检查组件是否可用
-            if not all([self.vector_store, self.llm_client]):
+            if not all([self.vector_store, self.llm_client, self.hierarchical_retriever]):
                 return self._mock_response(question, start_time)
             
-            # 1. 查询增强和向量检索相关文档
-            enhanced_results = self._enhanced_search(
-                question, 
-                kwargs.get('top_k', self.config.retrieval.top_k),
-                kwargs.get('similarity_threshold', self.config.retrieval.similarity_threshold)
+            # 1. 父子分片两阶段检索
+            hierarchical_result = self.hierarchical_retriever.hierarchical_search(
+                query=question,
+                strategy="child_to_parent",  # 使用子分片到父分片策略
+                top_k=kwargs.get('top_k', self.config.retrieval.top_k),
+                similarity_threshold=kwargs.get('similarity_threshold', self.config.retrieval.similarity_threshold),
+                include_siblings=True
             )
-            similar_docs = enhanced_results['documents']
             
-            logger.info(f"增强检索完成: 原始查询找到 {enhanced_results['original_count']} 个, 增强查询找到 {len(similar_docs)} 个文档")
+            # 合并分层检索结果
+            similar_docs = []
+            similar_docs.extend(hierarchical_result.child_chunks)
+            similar_docs.extend(hierarchical_result.parent_contexts)
+            
+            logger.info(f"父子分片检索完成: 子分片 {hierarchical_result.child_count} 个, 父分片上下文 {hierarchical_result.parent_count} 个")
             
             # 2. Agentic分析和规划
             agentic_result = self.agentic_engine.process_query(question, similar_docs)
@@ -103,12 +115,25 @@ class RAGService:
                 similar_docs = similar_docs[:max_chunks]
                 logger.info(f"应用max_chunks限制，最终使用 {len(similar_docs)} 个文档")
             
-            # 4.5 预过滤文档：只保留真正相关的内容
-            filtered_docs = self._filter_relevant_docs(similar_docs, question)
-            logger.info(f"内容过滤后保留 {len(filtered_docs)} 个真正相关的文档")
+            # 4.5 智能内容过滤：使用语义相似度过滤
+            if self.content_filter:
+                filtered_docs = self.content_filter.filter_documents(
+                    similar_docs, 
+                    question,
+                    max_docs=kwargs.get('max_chunks', 5)
+                )
+                logger.info(f"智能语义过滤后保留 {len(filtered_docs)} 个相关文档")
+            else:
+                # 回退到规则过滤
+                filtered_docs = self._filter_relevant_docs(similar_docs, question)
+                logger.info(f"规则过滤后保留 {len(filtered_docs)} 个相关文档")
             
-            # 5. 使用增强上下文调用LLM
-            enhanced_context = agentic_result.get('enhanced_context', '')
+            # 5. 构建增强上下文（结合父子分片信息）
+            if hierarchical_result.parent_contexts:
+                enhanced_context = self.hierarchical_retriever.get_enhanced_context(hierarchical_result)
+            else:
+                enhanced_context = agentic_result.get('enhanced_context', '')
+            
             system_prompt = self._build_agentic_system_prompt(agentic_result)
             
             llm_result = self.llm_client.chat(
@@ -132,6 +157,12 @@ class RAGService:
                 'model': self.llm_client.model_name if self.llm_client else 'unknown',
                 'retrieved_docs': len(similar_docs),
                 'filtered_docs': len(filtered_docs),  # 添加过滤信息
+                # 父子分片信息
+                'hierarchical_info': {
+                    'child_chunks': hierarchical_result.child_count,
+                    'parent_contexts': hierarchical_result.parent_count,
+                    'strategy': hierarchical_result.retrieval_strategy
+                },
                 # Agentic增强信息
                 'agentic_analysis': agentic_result['agentic_analysis'],
                 'query_type': agentic_result['agentic_analysis']['query_type'],
@@ -512,12 +543,22 @@ class RAGService:
             'filename': doc.get('filename'),
             'document_name': doc.get('document_name'),
             'similarity': round(doc.get('similarity', 0), 3),
+            'content': doc.get('content', ''),  # 完整内容
             'content_preview': doc.get('content', '')[:200] + '...' if len(doc.get('content', '')) > 200 else doc.get('content', ''),
             'content_length': len(doc.get('content', '')),
             'metadata': doc.get('metadata', {}),
             
             # 前端定位信息
             'reference_format': f"【文档：{doc.get('filename', 'unknown')}，片段ID：{doc.get('chunk_id', 'unknown')}，相似度：{doc.get('similarity', 0):.3f}】",
+            
+            # 为前端提供完整的分片信息
+            'chunk_info': {
+                'id': doc.get('chunk_id'),
+                'content': doc.get('content', ''),  # 确保这是完整的处理后内容
+                'preview': doc.get('content', '')[:100] + '...' if len(doc.get('content', '')) > 100 else doc.get('content', ''),
+                'length': len(doc.get('content', '')),
+                'contains_target': '2.7' in doc.get('content', '') and 'Maximum' in doc.get('content', '')  # 标识是否包含目标信息
+            },
             
             # 文档定位数据（用于前端跳转）
             'location_data': {
@@ -528,6 +569,9 @@ class RAGService:
                 'start_char': doc.get('start_char', 0),
                 'end_char': doc.get('end_char', 0),
                 'anchor_text': doc.get('content', '')[:50].replace('\n', ' ') + '...' if doc.get('content') else '',
+                # 确保前端使用正确的内容进行高亮
+                'highlight_content': doc.get('content', ''),  # 用于高亮的完整内容
+                'content_type': 'processed_chunk'  # 标识这是处理后的分片内容
             },
             
             # 文档预览URL
