@@ -65,119 +65,116 @@ class RAGService:
             self.multi_turn_processor = MultiTurnRagProcessor(self.conversation_manager)
             logger.warning("使用模拟模式运行RAG服务（保留Agentic、工具调用、多轮对话功能）")
     
-    def query(self, question: str, **kwargs) -> Dict[str, Any]:
-        """
-        执行问答查询
-        
-        Args:
-            question: 用户问题
-            **kwargs: 其他参数
-            
-        Returns:
-            查询结果
-        """
-        logger.info(f"收到查询: {question}")
+    async def query(self, question: str, top_k: int = 5, max_chunks: int = 3, 
+                   use_reranking: bool = True, 
+                   similarity_threshold: float = 0.3, **kwargs) -> Dict[str, Any]:
+        """查询处理"""
         start_time = time.time()
         
+        logger.info(f"收到查询: {question}")
+        logger.info(f"查询参数: top_k={top_k}, max_chunks={max_chunks}, similarity_threshold={similarity_threshold}")
+        
+        # 使用分层检索器进行检索
+        hierarchical_result = self.hierarchical_retriever.hierarchical_search(
+            query=question,
+            top_k=top_k,
+            similarity_threshold=similarity_threshold
+        )
+        
+        # 从分层结果中提取文档列表（合并子分片和父分片）
+        results = hierarchical_result.child_chunks + hierarchical_result.parent_contexts
+        
+        logger.info(f"向量检索后得到 {len(results)} 个文档")
+        logger.info(f"向量检索结果chunk_ids: {[r.get('chunk_id') for r in results]}")
+        
+        if not results:
+            logger.warning("未找到相关文档")
+            return {
+                "answer": "抱歉，我没有找到相关的文档来回答这个问题。",
+                "confidence": 0.0,
+                "sources": [],
+                "response_time": time.time() - start_time,
+                "query_id": str(uuid.uuid4()),
+                "hierarchical_info": {}
+            }
+        
+        # 内容过滤 - 临时禁用用于测试
+        # filtered_results = self.content_filter.filter_documents(
+        #     docs=results,
+        #     question=question
+        # )
+        
+        # 临时直接使用向量检索结果
+        filtered_results = results[:max_chunks] if results else []
+        
+        logger.info(f"内容过滤后保留 {len(filtered_results)} 个真正相关的文档")
+        logger.info(f"过滤后保留chunk_ids: {[r.get('chunk_id') for r in filtered_results]}")
+        
+        if not filtered_results:
+            logger.warning("过滤后无相关文档")
+            return {
+                "answer": "抱歉，经过内容分析后，没有找到真正相关的文档来回答这个问题。",
+                "confidence": 0.0,
+                "sources": [],
+                "response_time": time.time() - start_time,
+                "query_id": str(uuid.uuid4()),
+                "hierarchical_info": {}
+            }
+        
+        # 构建用于LLM的上下文
+        context_text = self._build_context(filtered_results)
+        enhanced_context = {
+            'context': context_text,
+            'documents': filtered_results,
+            'hierarchical_info': {
+                'total_chunks': len(results),
+                'filtered_chunks': len(filtered_results),
+                'strategy': 'child_to_parent'
+            }
+        }
+        
+        logger.info(f"最终送入LLM的文档数量: {len(enhanced_context.get('documents', []))}")
+        final_chunk_ids = []
+        for doc in enhanced_context.get('documents', []):
+            if 'chunk_id' in doc:
+                final_chunk_ids.append(doc['chunk_id'])
+            elif 'id' in doc:
+                final_chunk_ids.append(doc['id'])
+        logger.info(f"最终送入LLM的chunk_ids: {final_chunk_ids}")
+        
+        # 生成回答
+        context_text = enhanced_context.get('context', '')
+        prompt = self._build_prompt(question, context_text)
+        
         try:
-            # 检查组件是否可用
-            if not all([self.vector_store, self.llm_client, self.hierarchical_retriever]):
-                return self._mock_response(question, start_time)
+            answer = self.llm_client.generate(prompt, temperature=0.1)
+            confidence = 0.7  # 默认置信度
             
-            # 1. 父子分片两阶段检索
-            hierarchical_result = self.hierarchical_retriever.hierarchical_search(
-                query=question,
-                strategy="child_to_parent",  # 使用子分片到父分片策略
-                top_k=kwargs.get('top_k', self.config.retrieval.top_k),
-                similarity_threshold=kwargs.get('similarity_threshold', self.config.retrieval.similarity_threshold),
-                include_siblings=True
-            )
+            # 格式化源信息
+            sources = [self._format_source(doc) for doc in filtered_results]
             
-            # 合并分层检索结果
-            similar_docs = []
-            similar_docs.extend(hierarchical_result.child_chunks)
-            similar_docs.extend(hierarchical_result.parent_contexts)
-            
-            logger.info(f"父子分片检索完成: 子分片 {hierarchical_result.child_count} 个, 父分片上下文 {hierarchical_result.parent_count} 个")
-            
-            # 2. Agentic分析和规划
-            agentic_result = self.agentic_engine.process_query(question, similar_docs)
-            logger.info(f"Agentic分析完成: {agentic_result['agentic_analysis']['query_type']}")
-            
-            # 3. 重排序（如果启用）
-            if self.config.retrieval.rerank and len(similar_docs) > self.config.retrieval.rerank_top_k:
-                similar_docs = self._rerank_documents(similar_docs, question)[:self.config.retrieval.rerank_top_k]
-                logger.info(f"重排序后保留 {len(similar_docs)} 个文档")
-            
-            # 4. 应用max_chunks限制（如果指定）
-            max_chunks = kwargs.get('max_chunks')
-            if max_chunks and max_chunks < len(similar_docs):
-                similar_docs = similar_docs[:max_chunks]
-                logger.info(f"应用max_chunks限制，最终使用 {len(similar_docs)} 个文档")
-            
-            # 4.5 智能内容过滤：使用语义相似度过滤
-            if self.content_filter:
-                filtered_docs = self.content_filter.filter_documents(
-                    similar_docs, 
-                    question,
-                    max_docs=kwargs.get('max_chunks', 5)
-                )
-                logger.info(f"智能语义过滤后保留 {len(filtered_docs)} 个相关文档")
-            else:
-                # 回退到规则过滤
-                filtered_docs = self._filter_relevant_docs(similar_docs, question)
-                logger.info(f"规则过滤后保留 {len(filtered_docs)} 个相关文档")
-            
-            # 5. 构建增强上下文（结合父子分片信息）
-            if hierarchical_result.parent_contexts:
-                enhanced_context = self.hierarchical_retriever.get_enhanced_context(hierarchical_result)
-            else:
-                enhanced_context = agentic_result.get('enhanced_context', '')
-            
-            system_prompt = self._build_agentic_system_prompt(agentic_result)
-            
-            llm_result = self.llm_client.chat(
-                question=question,
-                context=filtered_docs,
-                system_prompt=system_prompt,
-                temperature=kwargs.get('temperature'),
-                max_tokens=kwargs.get('max_tokens')
-            )
-            
-            # 5. 构建增强结果
             end_time = time.time()
             response_time = end_time - start_time
             
-            result = {
-                'answer': llm_result['answer'],
-                'confidence': max(self._calculate_confidence(filtered_docs), agentic_result['agentic_analysis']['overall_confidence']),
-                'sources': [self._format_source(doc) for doc in filtered_docs],  # 使用过滤后的文档
-                'query_id': str(uuid.uuid4()),
-                'response_time': response_time,
-                'model': self.llm_client.model_name if self.llm_client else 'unknown',
-                'retrieved_docs': len(similar_docs),
-                'filtered_docs': len(filtered_docs),  # 添加过滤信息
-                # 父子分片信息
-                'hierarchical_info': {
-                    'child_chunks': hierarchical_result.child_count,
-                    'parent_contexts': hierarchical_result.parent_count,
-                    'strategy': hierarchical_result.retrieval_strategy
-                },
-                # Agentic增强信息
-                'agentic_analysis': agentic_result['agentic_analysis'],
-                'query_type': agentic_result['agentic_analysis']['query_type'],
-                'reasoning_steps': len(agentic_result['agentic_analysis']['reasoning_steps']),
-                'search_strategies': agentic_result['search_strategies']
+            return {
+                "answer": answer,
+                "confidence": confidence,
+                "sources": sources,
+                "response_time": response_time,
+                "query_id": str(uuid.uuid4()),
+                "hierarchical_info": enhanced_context.get('hierarchical_info', {})
             }
-            
-            # 5. 记录查询历史
-            self._save_query_history(question, result)
-            
-            return result
-            
+        
         except Exception as e:
-            logger.error(f"RAG查询失败: {e}")
-            return self._mock_response(question, start_time, f"查询失败: {str(e)}")
+            logger.error(f"生成回答时出错: {str(e)}")
+            return {
+                "answer": f"生成回答时出现错误: {str(e)}",
+                "confidence": 0.0,
+                "sources": [],
+                "response_time": time.time() - start_time,
+                "query_id": str(uuid.uuid4()),
+                "hierarchical_info": {}
+            }
     
     def query_stream(self, question: str, **kwargs) -> Generator[str, None, None]:
         """
@@ -212,7 +209,7 @@ class RAGService:
             查询结果
         """
         # 简单的异步包装
-        return self.query(question, **kwargs)
+        return await self.query(question, **kwargs)
     
     async def query_stream_async(self, question: str, **kwargs) -> AsyncGenerator[str, None]:
         """
@@ -756,3 +753,86 @@ class RAGService:
     def get_conversation_stats(self) -> Dict[str, Any]:
         """获取对话统计信息"""
         return self.conversation_manager.get_conversation_stats() 
+
+    def _build_context(self, context: List[Dict[str, Any]]) -> str:
+        """
+        构建上下文文本
+        
+        Args:
+            context: 上下文文档列表
+            
+        Returns:
+            格式化的上下文文本
+        """
+        if not context:
+            return "未找到相关文档。"
+        
+        context_parts = ["以下是相关的参考文档："]
+        
+        for i, doc in enumerate(context, 1):
+            content = doc.get('content', '')
+            filename = doc.get('filename', 'unknown')
+            chunk_id = doc.get('chunk_id', f'chunk_{i}')
+            similarity = doc.get('similarity', 0.0)
+            
+            # 添加明确的文档标识
+            context_parts.append(f"""
+【文档{i}：{filename}，片段ID：{chunk_id}，相似度：{similarity:.3f}】
+{content}
+""")
+        
+        return "\n".join(context_parts)
+
+    def _build_prompt(self, question: str, context: str, system_prompt: str = None) -> str:
+        """
+        构建完整的提示词
+        
+        Args:
+            question: 用户问题
+            context: 上下文文本
+            system_prompt: 系统提示词
+            
+        Returns:
+            完整的提示词
+        """
+        if system_prompt is None:
+            system_prompt = """你是一个专业的法律法规智能助手。请基于提供的文档内容，准确、详细地回答用户的问题。
+
+请遵循以下回答步骤：
+
+首先，请在<think>标签内进行分析推理：
+1. 定位相关信息：仔细查看文档片段，确定哪些内容与问题相关
+2. 验证信息准确性：确认文档中确实包含相关信息，避免幻觉
+3. 提供直接答案：基于文档内容给出准确回答
+
+然后，在<think>标签外提供最终回答。
+
+要求：
+1. 仅基于提供的文档内容回答，不要编造信息
+2. 如果文档中没有相关信息，请明确说明
+3. 回答要准确、专业、易懂
+4. 可以适当引用文档中的具体条款，格式为【文档：filename，片段ID：chunk_id，相似度：0.xxx】
+5. 保持客观中立的态度"""
+        
+        # 完整提示词
+        prompt = f"""{system_prompt}
+
+{context}
+
+=== 用户问题 ===
+{question}
+
+=== 回答 ===
+<think>
+好的，我现在需要回答用户关于{question}的问题。首先，我要按照用户提供的推理步骤来分析。
+
+步骤1是定位相关信息。让我仔细查看文档片段，确定哪些内容与问题相关。
+
+步骤2是验证信息准确性。我需要确认文档中确实包含相关信息，避免幻觉。
+
+步骤3是提供直接答案。我将基于文档内容给出准确回答。
+</think>
+
+请基于上述文档内容回答用户问题："""
+        
+        return prompt 

@@ -215,6 +215,26 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
                                     <span>相似度: {source.similarity.toFixed(3)}</span>
                                   </div>
                                 </div>
+                                <div className="flex gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => onSourceClick(source.filename, source.chunk_id)}
+                                    className="h-8 px-2 bg-transparent hover:bg-transparent"
+                                    title="查看原文档"
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => window.open(apiClient.getDownloadUrl(source.filename), '_blank')}
+                                    className="h-8 px-2 bg-transparent hover:bg-transparent"
+                                    title="下载文档"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                  </Button>
+                                </div>
                               </div>
                             </CardContent>
                           </Card>
