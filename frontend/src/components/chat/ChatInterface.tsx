@@ -245,7 +245,7 @@ export default function ChatInterface({ onSourceClick }: ChatInterfaceProps) {
               </Card>
               {/* 时间戳显示（可选） */}
               {message.timestamp && (
-                <div className="text-xs text-muted-foreground mt-1 px-1">
+                <div className={`text-xs text-muted-foreground mt-1 px-1 text-right`}>
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </div>
               )}
