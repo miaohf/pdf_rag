@@ -1,13 +1,14 @@
 """
 Agentic RAG引擎
 
-实现智能代理式的检索增强生成，具备规划、执行、反思能力。
+实现智能代理式的检索增强生成，包括查询规划、多步推理等高级功能。
 """
 
 import re
-from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+import json
 from enum import Enum
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 
 from src.utils.config import Config
 from src.utils.logger import get_logger
@@ -113,8 +114,10 @@ class QueryAnalyzer:
 class QueryPlanner:
     """查询规划器 - 制定查询执行计划"""
     
-    def __init__(self):
+    def __init__(self, config: Config = None, llm_client=None):
         self.analyzer = QueryAnalyzer()
+        self.config = config
+        self.llm_client = llm_client
     
     def plan_query(self, question: str) -> QueryPlan:
         """
@@ -126,30 +129,110 @@ class QueryPlanner:
         Returns:
             查询计划
         """
+        # 首先使用LLM进行问题分解
+        sub_questions = self._llm_decompose_question(question)
+        
+        # 然后使用规则分析查询类型
         query_type = self.analyzer.analyze_query(question)
         
         # 根据查询类型制定计划
         if query_type == QueryType.DEFINITIONAL:
-            return self._plan_definitional(question, query_type)
+            return self._plan_definitional(question, query_type, sub_questions)
         elif query_type == QueryType.ANALYTICAL:
-            return self._plan_analytical(question, query_type)
+            return self._plan_analytical(question, query_type, sub_questions)
         elif query_type == QueryType.COMPARATIVE:
-            return self._plan_comparative(question, query_type)
+            return self._plan_comparative(question, query_type, sub_questions)
         elif query_type == QueryType.PROCEDURAL:
-            return self._plan_procedural(question, query_type)
+            return self._plan_procedural(question, query_type, sub_questions)
         else:
-            return self._plan_factual(question, query_type)
+            return self._plan_factual(question, query_type, sub_questions)
     
-    def _plan_definitional(self, question: str, query_type: QueryType) -> QueryPlan:
+    def _llm_decompose_question(self, question: str) -> List[str]:
+        """
+        使用大模型分解复杂问题为多个子问题
+        
+        Args:
+            question: 原始问题
+            
+        Returns:
+            分解后的子问题列表
+        """
+        if not self.llm_client:
+            # 如果没有LLM客户端，返回原始问题
+            return [question]
+        
+        try:
+            decompose_prompt = f"""
+你是一个专业的问题分析专家。请将下面的复杂问题分解为多个更具体的子问题，以便更好地检索相关信息。
+
+分解原则：
+1. 如果问题包含多个独立的信息点（如"A、B、C分别是什么"），应该分解为独立的子问题
+2. 如果问题是单一的、简单的，可以保持原样
+3. 每个子问题应该是完整的、可独立回答的
+4. 子问题应该覆盖原问题的所有信息需求
+5. 不要过度分解，保持合理的粒度
+
+请以JSON格式返回，只返回子问题数组，不要其他文字：
+["子问题1", "子问题2", ...]
+
+原始问题：{question}
+"""
+            
+            logger.info("使用LLM分解问题...")
+            response = self.llm_client.generate(decompose_prompt, temperature=0.1)
+            logger.info(f"LLM分解响应: {response}")
+            
+            # 解析LLM响应，提取JSON数组
+            import json
+            import re
+            
+            # 尝试直接解析JSON
+            try:
+                # 查找JSON数组
+                json_match = re.search(r'\[.*?\]', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    sub_questions = json.loads(json_str)
+                    if isinstance(sub_questions, list) and len(sub_questions) > 0:
+                        logger.info(f"成功分解为 {len(sub_questions)} 个子问题")
+                        return sub_questions
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.warning(f"解析LLM响应JSON失败: {e}")
+            
+            # 如果JSON解析失败，尝试按行分割
+            lines = [line.strip() for line in response.split('\n') if line.strip()]
+            potential_questions = []
+            for line in lines:
+                # 移除序号、引号等
+                clean_line = re.sub(r'^[\d\.\-\*\s]*["\']*', '', line)
+                clean_line = re.sub(r'["\']*\s*[,，]*\s*$', '', clean_line)
+                if clean_line and len(clean_line) > 5:  # 过滤太短的行
+                    potential_questions.append(clean_line)
+            
+            if potential_questions:
+                logger.info(f"通过行分割得到 {len(potential_questions)} 个子问题")
+                return potential_questions
+            
+        except Exception as e:
+            logger.error(f"LLM问题分解失败: {e}")
+        
+        # 如果分解失败，返回原始问题
+        logger.info("LLM分解失败，使用原始问题")
+        return [question]
+    
+    def _plan_definitional(self, question: str, query_type: QueryType, sub_questions: List[str] = None) -> QueryPlan:
         """定义性查询计划"""
-        return QueryPlan(
-            original_question=question,
-            query_type=query_type,
-            sub_questions=[
+        if not sub_questions or len(sub_questions) == 1:
+            sub_questions = [
                 question,
                 f"请详细解释{self._extract_key_term(question)}",
                 f"{self._extract_key_term(question)}的特点是什么"
-            ],
+            ]
+        
+        return QueryPlan(
+            original_question=question,
+            query_type=query_type,
+            sub_questions=sub_questions,
             search_strategies=["exact_match", "semantic_search"],
             reasoning_steps=[
                 "提取关键概念定义",
@@ -159,16 +242,19 @@ class QueryPlanner:
             confidence=0.8
         )
     
-    def _plan_analytical(self, question: str, query_type: QueryType) -> QueryPlan:
+    def _plan_analytical(self, question: str, query_type: QueryType, sub_questions: List[str] = None) -> QueryPlan:
         """分析性查询计划"""
-        return QueryPlan(
-            original_question=question,
-            query_type=query_type,
-            sub_questions=[
+        if not sub_questions or len(sub_questions) == 1:
+            sub_questions = [
                 question,
                 f"这涉及哪些方面的因素",
                 f"这些因素如何相互作用"
-            ],
+            ]
+        
+        return QueryPlan(
+            original_question=question,
+            query_type=query_type,
+            sub_questions=sub_questions,
             search_strategies=["semantic_search", "multi_document"],
             reasoning_steps=[
                 "识别关键因素",
@@ -179,13 +265,13 @@ class QueryPlanner:
             confidence=0.6
         )
     
-    def _plan_comparative(self, question: str, query_type: QueryType) -> QueryPlan:
+    def _plan_comparative(self, question: str, query_type: QueryType, sub_questions: List[str] = None) -> QueryPlan:
         """比较性查询计划"""
-        entities = self._extract_comparison_entities(question)
-        
-        sub_questions = [question]
-        for entity in entities:
-            sub_questions.append(f"{entity}的特点是什么")
+        if not sub_questions or len(sub_questions) == 1:
+            entities = self._extract_comparison_entities(question)
+            sub_questions = [question]
+            for entity in entities:
+                sub_questions.append(f"{entity}的特点是什么")
         
         return QueryPlan(
             original_question=question,
@@ -201,16 +287,19 @@ class QueryPlanner:
             confidence=0.7
         )
     
-    def _plan_procedural(self, question: str, query_type: QueryType) -> QueryPlan:
+    def _plan_procedural(self, question: str, query_type: QueryType, sub_questions: List[str] = None) -> QueryPlan:
         """程序性查询计划"""
-        return QueryPlan(
-            original_question=question,
-            query_type=query_type,
-            sub_questions=[
+        if not sub_questions or len(sub_questions) == 1:
+            sub_questions = [
                 question,
                 f"这个过程包含哪些步骤",
                 f"每个步骤的具体要求是什么"
-            ],
+            ]
+        
+        return QueryPlan(
+            original_question=question,
+            query_type=query_type,
+            sub_questions=sub_questions,
             search_strategies=["procedural_search", "step_by_step"],
             reasoning_steps=[
                 "识别主要步骤",
@@ -221,12 +310,16 @@ class QueryPlanner:
             confidence=0.8
         )
     
-    def _plan_factual(self, question: str, query_type: QueryType) -> QueryPlan:
+    def _plan_factual(self, question: str, query_type: QueryType, sub_questions: List[str] = None) -> QueryPlan:
         """事实性查询计划"""
+        # 对于事实性查询，使用LLM分解的结果
+        if not sub_questions:
+            sub_questions = [question]
+        
         return QueryPlan(
             original_question=question,
             query_type=query_type,
-            sub_questions=[question],
+            sub_questions=sub_questions,
             search_strategies=["exact_match"],
             reasoning_steps=[
                 "定位相关信息",
@@ -339,15 +432,16 @@ class ReasoningEngine:
 class AgenticRAGEngine:
     """Agentic RAG引擎 - 智能代理式检索增强生成"""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, llm_client=None):
         """
         初始化Agentic RAG引擎
         
         Args:
             config: 配置对象
+            llm_client: LLM客户端
         """
         self.config = config
-        self.planner = QueryPlanner()
+        self.planner = QueryPlanner(config, llm_client)
         self.reasoning_engine = ReasoningEngine()
         
         logger.info("Agentic RAG引擎初始化完成")

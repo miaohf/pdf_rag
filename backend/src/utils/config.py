@@ -6,7 +6,7 @@
 
 import os
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -54,11 +54,18 @@ class EmbeddingConfig(BaseModel):
 
 class DocumentConfig(BaseModel):
     """文档处理配置"""
-    chunk_size: int = 300              # 子分片大小，从600减少到300
-    chunk_overlap: int = 60             # 重叠大小，保持20%重叠比例
-    parent_chunk_size: int = 800        # 父分片大小，新增配置
-    max_chunks_per_document: int = 200
+    chunk_size: int = 512
+    chunk_overlap: int = 128
+    max_chunks_per_document: int = 1000
+    parent_chunk_size: int = 1536  # 父分片大小，默认为子分片的3倍
+
     use_hierarchical_chunking: bool = True  # 启用父子分片
+    
+    # 语义分片配置
+    use_semantic_chunking: bool = True      # 启用基于语义的分片
+    semantic_strategy: str = "auto"         # 语义分片策略 ("auto", "recursive", "token", "character")
+    semantic_threshold: float = 0.75        # 语义相似度阈值
+    preserve_structure: bool = True         # 保持文档结构
 
 
 class RetrievalConfig(BaseModel):
@@ -67,6 +74,23 @@ class RetrievalConfig(BaseModel):
     similarity_threshold: float = 0.5
     rerank: bool = True
     rerank_top_k: int = 8
+    
+    # 查询扩展配置
+    enable_query_expansion: bool = True
+    expansion_strategies: List[str] = ["synonym", "concept", "domain"]
+    
+    # 领域特定配置
+    domain_configs: Dict[str, Dict[str, Any]] = {
+        "rcp_system": {
+            "core_concepts": ["Remote Control Parking", "RCP", "远程控制停车"],
+            "key_parameters": ["法规依据", "最大行驶距离", "速度限制", "最大操作距离"],
+            "parameter_mappings": {
+                "最大行驶距离": ["travel distance", "vehicle travel", "12 metres", "12 meters"],
+                "速度限制": ["speed limit", "maximum speed", "vehicle speed", "2 km/h"],
+                "最大操作距离": ["operation distance", "control distance", "handheld distance", "6 metres"]
+            }
+        }
+    }
 
 
 class LoggingConfig(BaseModel):

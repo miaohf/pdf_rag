@@ -192,11 +192,7 @@ class HierarchicalRetriever:
         result.retrieval_strategy = "hybrid"
         return result
     
-    def _get_parent_contexts(
-        self,
-        child_results: List[Dict[str, Any]],
-        include_siblings: bool = True
-    ) -> List[Dict[str, Any]]:
+    def _get_parent_contexts(self, child_results: List[Dict[str, Any]], include_siblings: bool = True) -> List[Dict[str, Any]]:
         """
         获取父分片上下文
         
@@ -209,8 +205,8 @@ class HierarchicalRetriever:
         """
         from src.core.models import DocumentChunk
         
-        # 提取父分片ID
-        parent_ids = set()
+        # 提取父分片ID并保留子分片信息
+        parent_info = {}
         for child in child_results:
             chunk_id = child.get('chunk_id')
             if chunk_id:
@@ -220,16 +216,29 @@ class HierarchicalRetriever:
                     ).first()
                     
                     if chunk and chunk.parent_chunk_id:
-                        parent_ids.add(chunk.parent_chunk_id)
+                        if chunk.parent_chunk_id not in parent_info:
+                            parent_info[chunk.parent_chunk_id] = {
+                                'filename': child.get('filename', 'unknown'),
+                                'document_id': child.get('document_id'),
+                                'max_similarity': child.get('similarity', 0.0),
+                                'child_similarities': []
+                            }
+                        else:
+                            # 取最高相似度
+                            parent_info[chunk.parent_chunk_id]['max_similarity'] = max(
+                                parent_info[chunk.parent_chunk_id]['max_similarity'],
+                                child.get('similarity', 0.0)
+                            )
+                        parent_info[chunk.parent_chunk_id]['child_similarities'].append(child.get('similarity', 0.0))
         
-        if not parent_ids:
+        if not parent_info:
             logger.info("未找到父分片ID，可能数据中没有父子关系")
             return []
         
         parent_contexts = []
         
         with self.db.get_session() as session:
-            for parent_id in parent_ids:
+            for parent_id, info in parent_info.items():
                 # 获取该父分片的所有子分片
                 child_chunks = session.query(DocumentChunk).filter(
                     DocumentChunk.parent_chunk_id == parent_id
@@ -239,15 +248,24 @@ class HierarchicalRetriever:
                     # 重构父分片内容（合并所有子分片）
                     parent_content = self._reconstruct_parent_content(child_chunks)
                     
+                    # 计算父分片的综合相似度（取子分片平均值）
+                    avg_similarity = sum(info['child_similarities']) / len(info['child_similarities'])
+                    
                     parent_context = {
+                        'chunk_id': f"parent_{parent_id}",
                         'parent_id': parent_id,
                         'content': parent_content,
+                        'filename': info['filename'],
+                        'document_id': info['document_id'],
+                        'similarity': avg_similarity,  # 添加相似度
                         'chunk_count': len(child_chunks),
-                        'chunk_ids': [chunk.id for chunk in child_chunks],
+                        'child_chunk_ids': [chunk.id for chunk in child_chunks],
                         'metadata': {
                             'type': 'reconstructed_parent',
                             'child_count': len(child_chunks),
-                            'parent_id': parent_id
+                            'parent_id': parent_id,
+                            'max_child_similarity': info['max_similarity'],
+                            'avg_child_similarity': avg_similarity
                         },
                         'source': f"父分片 {parent_id} (包含 {len(child_chunks)} 个子分片)"
                     }
