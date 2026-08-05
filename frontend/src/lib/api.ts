@@ -51,11 +51,15 @@ export interface DocumentPreviewResponse {
     start_line?: number
     end_line?: number
     parent_chunk_id?: string
+    start_char?: number
+    end_char?: number
   }
   highlight_info?: {
     start_line: number
     end_line: number
     text: string
+    char_start?: number
+    char_end?: number
   }
 }
 

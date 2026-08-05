@@ -122,23 +122,35 @@ class DocumentProcessor:
                     
                     session.commit()
             
-            # 3. 分片处理
-            chunks = self.chunker.smart_chunk(document['content'])
+            # 3. 分片处理 - 使用父子分片策略
+            if self.chunker.use_hierarchical_chunking:
+                logger.info("使用父子分片策略处理文档")
+                hierarchical_chunks = self.chunker.create_parent_child_chunks(
+                    document['content'],
+                    document['content']
+                )
+                
+                # 主要使用子分片进行检索，父分片用于上下文扩展
+                chunks = hierarchical_chunks['child_chunks']
+                parent_chunks = hierarchical_chunks['parent_chunks']
+                
+                # 记录父子关系信息
+                logger.info(f"父子分片完成: {len(parent_chunks)} 个父分片, {len(chunks)} 个子分片")
+            else:
+                logger.info("使用传统单层分片策略处理文档")
+                chunks = self.chunker.smart_chunk(document['content'])
             
-            # 分片器已经在chunk_by_sentences中正确设置了original_content，这里不需要再次覆盖
-            # 只有当chunk.original_content为空时才尝试从原始文档中提取
-            original_content = document.get('original_content', document['content'])
-            for chunk in chunks:
-                if not chunk.original_content or chunk.original_content == chunk.content:
-                    # 只有在原始内容为空或与content相同时才提取
-                    chunk.original_content = self._extract_original_chunk_content(
-                        original_content, chunk.content, chunk.start_pos, chunk.end_pos
-                    )
+            # 注意：现在content字段已经保存原始格式的内容，无需额外处理
             
             logger.info(f"文档分片完成: {len(chunks)} 个片段")
             
             # 4. 存储片段到数据库（包含向量化）
-            chunk_ids = self._store_chunks(document_id, chunks, document['metadata'])
+            if self.chunker.use_hierarchical_chunking:
+                # 对于父子分片，我们主要存储子分片用于检索，但也记录父分片信息
+                chunk_ids = self._store_chunks(document_id, chunks, document['metadata'])
+                # 注意：父分片信息已经通过parent_chunk_id字段记录在子分片中
+            else:
+                chunk_ids = self._store_chunks(document_id, chunks, document['metadata'])
             
             # 5. 更新文档状态
             if self.enable_vectorization:
@@ -317,10 +329,10 @@ class DocumentProcessor:
                     new_chunk = DocumentChunk(
                         document_id=document_id,
                         content=chunk.content,
-                        original_content=getattr(chunk, 'original_content', chunk.content),  # 保存原始格式内容
                         chunk_index=chunk.index,
                         start_char=chunk.start_pos,
                         end_char=chunk.end_pos,
+                        parent_chunk_id=chunk.parent_chunk_id,  # 设置父分片ID
                         chunk_metadata=chunk_metadata
                     )
                     
@@ -484,60 +496,4 @@ class DocumentProcessor:
             logger.error(f"删除文档失败: {e}")
             return False 
 
-    def _extract_original_chunk_content(self, original_text: str, chunk_text: str, start_pos: int, end_pos: int) -> str:
-        """
-        从原始文档中提取对应chunk的原始内容（保留格式）
-        
-        Args:
-            original_text: 原始文档内容
-            chunk_text: 纯文本chunk内容
-            start_pos: 开始位置
-            end_pos: 结束位置
-            
-        Returns:
-            保留格式的chunk内容
-        """
-        try:
-            # 简化实现：尝试在原始文档中查找chunk文本的对应部分
-            # 移除chunk文本中的多余空白以便匹配
-            clean_chunk = ' '.join(chunk_text.split())
-            
-            # 在原始文档中查找最佳匹配位置
-            best_match_start = -1
-            best_match_end = -1
-            max_match_ratio = 0
-            
-            # 滑动窗口查找最佳匹配
-            window_size = len(chunk_text) + 200  # 稍微放宽窗口大小
-            for i in range(0, len(original_text) - len(chunk_text) + 1, 50):
-                window_end = min(i + window_size, len(original_text))
-                window_text = original_text[i:window_end]
-                clean_window = ' '.join(window_text.split())
-                
-                # 计算相似度（简单的包含检查）
-                if clean_chunk[:100] in clean_window:  # 检查chunk开头是否在窗口中
-                    # 找到匹配，尝试精确定位
-                    chunk_words = clean_chunk.split()[:10]  # 取前10个词
-                    if len(chunk_words) > 0:
-                        first_words = ' '.join(chunk_words)
-                        match_pos = clean_window.find(first_words)
-                        if match_pos >= 0:
-                            # 映射回原始文档位置
-                            actual_start = i
-                            # 估算结束位置
-                            estimated_length = min(len(chunk_text) * 1.3, len(window_text))  # 预留格式字符空间
-                            actual_end = min(actual_start + int(estimated_length), len(original_text))
-                            
-                            return original_text[actual_start:actual_end].strip()
-            
-            # 如果没有找到好的匹配，回退到位置估算
-            if start_pos < len(original_text):
-                safe_end = min(end_pos, len(original_text))
-                return original_text[start_pos:safe_end].strip()
-            
-            # 最后的回退：返回chunk本身
-            return chunk_text
-            
-        except Exception as e:
-            logger.warning(f"提取原始chunk内容失败: {e}")
-            return chunk_text 
+ 

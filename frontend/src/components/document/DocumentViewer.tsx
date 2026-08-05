@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Download, FileText, Search, ZoomIn, ZoomOut, Eye, Code } from 'lucide-react'
+import { ChevronsRight, Download, FileText, Search, Eye, Code } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,13 @@ import { apiClient, type DocumentPreviewResponse } from '@/lib/api'
 interface DocumentViewerProps {
   currentDocument: DocumentPreviewResponse | null
   currentChunkId: string | null
-  onClose: () => void
+  onCollapse: () => void
 }
 
 export default function DocumentViewer({
   currentDocument,
   currentChunkId,
-  onClose
+  onCollapse
 }: DocumentViewerProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [fontSize, setFontSize] = useState(14)
@@ -69,7 +69,7 @@ export default function DocumentViewer({
     if (!searchTerm) return text
     
     const regex = new RegExp(`(${searchTerm})`, 'gi')
-    return text.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800">$1</mark>')
+    return text.replace(regex, '<mark class="bg-yellow-300 dark:bg-yellow-500 text-slate-900">$1</mark>')
   }
 
   // 高亮Markdown内容的函数
@@ -100,7 +100,7 @@ export default function DocumentViewer({
       const parts = text.split(regex)
       return parts.map((part, index) => 
         regex.test(part) ? (
-          <mark key={index} className="bg-yellow-200 dark:bg-yellow-800/70 px-1 py-0.5 rounded font-semibold">
+          <mark key={index} className="bg-yellow-300 dark:bg-yellow-500 px-1 py-0.5 rounded font-semibold text-slate-900">
             {part}
           </mark>
         ) : part
@@ -170,9 +170,27 @@ export default function DocumentViewer({
 
 
   const isHighlightedLine = (lineNumber: number) => {
-    if (!currentDocument.highlight_info) return false
-    return lineNumber >= currentDocument.highlight_info.start_line && 
-           lineNumber <= currentDocument.highlight_info.end_line
+    if (!currentDocument?.highlight_info) return false
+
+    const hi: any = (currentDocument as any).highlight_info
+    // 优先使用字符区间推导行号
+    if (typeof hi.char_start === 'number' && typeof hi.char_end === 'number') {
+      const content = currentDocument.content || ''
+      // 计算 start_line/end_line（与后端一致：按'\n'计数，1-based）
+      const start = Math.max(0, Math.min(content.length, hi.char_start))
+      const end = Math.max(start, Math.min(content.length, hi.char_end))
+      let sLines = 1
+      for (let i = 0; i < start; i++) if (content.charCodeAt(i) === 10) sLines++
+      let eLines = sLines
+      for (let i = start; i < end; i++) if (content.charCodeAt(i) === 10) eLines++
+      return lineNumber >= sLines && lineNumber <= eLines
+    }
+
+    // 回退使用后端的行号
+    return (
+      lineNumber >= currentDocument.highlight_info.start_line &&
+      lineNumber <= currentDocument.highlight_info.end_line
+    )
   }
 
   return (
@@ -180,32 +198,29 @@ export default function DocumentViewer({
       {/* 文档头部 */}
       <CardHeader className="border-b border-border">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <CardTitle className="text-base truncate">
-                {currentDocument.filename}
-              </CardTitle>
-              {currentDocument.chunk_info && (
-                <p className="text-sm text-muted-foreground">
-                  区块 ID: {currentDocument.chunk_info.id}
-                </p>
-              )}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+              <div className="min-w-0 flex-1 flex items-center gap-2">
+                <CardTitle className="text-base truncate">
+                  {currentDocument.filename}
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => window.open(apiClient.getDownloadUrl(currentDocument.filename), '_blank')}
+                  className="h-9 w-9 p-0"
+                  title="下载"
+                >
+                  <Download className="w-5 h-5" />
+                </Button>
+                {currentDocument.chunk_info && (
+                  <p className="text-sm text-muted-foreground">
+                    区块 ID: {currentDocument.chunk_info.id}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => window.open(apiClient.getDownloadUrl(currentDocument.filename), '_blank')}
-            >
-              <Download className="w-4 h-4 mr-1" />
-              下载
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
+
         </div>
         
         {/* 搜索和控制栏 */}
@@ -213,52 +228,36 @@ export default function DocumentViewer({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="在文档中搜索..."
+              placeholder="Search in document..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
           </div>
           <div className="flex items-center gap-1">
-            {/* Markdown文件的视图模式切换 */}
+            {/* Markdown文件的视图模式切换 - 仅图标 */}
             {isMarkdownFile && (
-              <div className="flex items-center border border-border rounded-md">
+              <div className="flex items-center border border-border rounded-md overflow-hidden">
                 <Button
                   size="sm"
                   variant={viewMode === 'preview' ? 'default' : 'ghost'}
                   onClick={() => setViewMode('preview')}
-                  className="rounded-r-none border-r border-border/50"
+                  className="rounded-none w-9 h-9 p-0"
+                  title="预览"
                 >
-                  <Eye className="w-4 h-4 mr-1" />
-                  预览
+                  <Eye className="w-4 h-4" />
                 </Button>
                 <Button
                   size="sm"
                   variant={viewMode === 'source' ? 'default' : 'ghost'}
                   onClick={() => setViewMode('source')}
-                  className="rounded-l-none"
+                  className="rounded-none w-9 h-9 p-0"
+                  title="源码"
                 >
-                  <Code className="w-4 h-4 mr-1" />
-                  源码
+                  <Code className="w-4 h-4" />
                 </Button>
               </div>
             )}
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setFontSize(Math.max(12, fontSize - 1))}
-            >
-              <ZoomOut className="w-4 h-4" />
-            </Button>
-            <span className="text-sm text-muted-foreground px-2">{fontSize}px</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setFontSize(Math.min(20, fontSize + 1))}
-            >
-              <ZoomIn className="w-4 h-4" />
-            </Button>
           </div>
         </div>
       </CardHeader>
@@ -275,14 +274,22 @@ export default function DocumentViewer({
             <div className="prose prose-sm max-w-4xl dark:prose-invert">
               {(() => {
                 const content = currentDocument.content || ''
-                // 备选1：后端提供字符范围（优先）
-                const startChar = (currentDocument as any)?.chunk_info?.start_char
-                const endChar = (currentDocument as any)?.chunk_info?.end_char
+                // 优先使用 highlight_info 的字符区间
+                const hi = (currentDocument as any)?.highlight_info as any
+                let start = typeof hi?.char_start === 'number' ? hi.char_start : -1
+                let end = typeof hi?.char_end === 'number' ? hi.char_end : -1
+
+                // 备选1：后端在chunk_info中返回了字符区间
+                if ((start < 0 || end <= start) && (currentDocument as any)?.chunk_info) {
+                  const startChar = (currentDocument as any)?.chunk_info?.start_char
+                  const endChar = (currentDocument as any)?.chunk_info?.end_char
+                  if (typeof startChar === 'number' && typeof endChar === 'number' && endChar > startChar) {
+                    start = startChar
+                    end = endChar
+                  }
+                }
 
                 // 备选2：没有字符范围，则通过chunk内容在全文中定位
-                let start = typeof startChar === 'number' ? startChar : -1
-                let end = typeof endChar === 'number' ? endChar : -1
-
                 if ((start < 0 || end <= start) && currentDocument.chunk_info?.content) {
                   const cleanFull = content
                   const cleanChunk = currentDocument.chunk_info.content.trim()
@@ -313,7 +320,7 @@ export default function DocumentViewer({
                         </ReactMarkdown>
                       )}
 
-                      <div ref={chunkRef} className="bg-yellow-100 text-gray-900 dark:text-gray-900 border-l-4 border-yellow-500 pl-4 py-4 my-6 rounded-r-lg ring-1 ring-yellow-200">
+                      <div ref={chunkRef} className="bg-yellow-100 dark:bg-yellow-600/30 text-gray-900 dark:text-slate-900 border-l-4 border-yellow-500 pl-4 py-4 my-6 rounded-r-lg ring-1 ring-yellow-300">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-xs bg-yellow-500 text-white px-2 py-1 rounded">🎯 引用片段</span>
                           {currentDocument.chunk_info?.id && (
@@ -363,7 +370,7 @@ export default function DocumentViewer({
                   <div
                     key={index}
                     data-line={lineNumber}
-                    className={`flex ${isHighlighted ? 'bg-yellow-200 dark:bg-yellow-800/30 border-l-4 border-yellow-500' : ''}`}
+                    className={`flex ${isHighlighted ? 'bg-yellow-200 dark:bg-yellow-600/40 border-l-4 border-yellow-500' : ''}`}
                   >
                     <span className="inline-block w-12 text-muted-foreground text-right pr-4 select-none">
                       {lineNumber}

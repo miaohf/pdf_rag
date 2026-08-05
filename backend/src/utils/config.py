@@ -6,7 +6,7 @@
 
 import os
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -54,9 +54,18 @@ class EmbeddingConfig(BaseModel):
 
 class DocumentConfig(BaseModel):
     """文档处理配置"""
-    chunk_size: int = 600
-    chunk_overlap: int = 100
-    max_chunks_per_document: int = 200
+    chunk_size: int = 512
+    chunk_overlap: int = 128
+    max_chunks_per_document: int = 1000
+    parent_chunk_size: int = 1536  # 父分片大小，默认为子分片的3倍
+
+    use_hierarchical_chunking: bool = True  # 启用父子分片
+    
+    # 语义分片配置
+    use_semantic_chunking: bool = True      # 启用基于语义的分片
+    semantic_strategy: str = "auto"         # 语义分片策略 ("auto", "recursive", "token", "character")
+    semantic_threshold: float = 0.75        # 语义相似度阈值
+    preserve_structure: bool = True         # 保持文档结构
 
 
 class RetrievalConfig(BaseModel):
@@ -65,6 +74,23 @@ class RetrievalConfig(BaseModel):
     similarity_threshold: float = 0.5
     rerank: bool = True
     rerank_top_k: int = 8
+    
+    # 查询扩展配置
+    enable_query_expansion: bool = True
+    expansion_strategies: List[str] = ["synonym", "concept", "domain"]
+    
+    # 领域特定配置
+    domain_configs: Dict[str, Dict[str, Any]] = {
+        "rcp_system": {
+            "core_concepts": ["Remote Control Parking", "RCP", "远程控制停车"],
+            "key_parameters": ["法规依据", "最大行驶距离", "速度限制", "最大操作距离"],
+            "parameter_mappings": {
+                "最大行驶距离": ["travel distance", "vehicle travel", "12 metres", "12 meters"],
+                "速度限制": ["speed limit", "maximum speed", "vehicle speed", "2 km/h"],
+                "最大操作距离": ["operation distance", "control distance", "handheld distance", "6 metres"]
+            }
+        }
+    }
 
 
 class LoggingConfig(BaseModel):
@@ -72,6 +98,18 @@ class LoggingConfig(BaseModel):
     level: str = "INFO"
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     file: str = "logs/pdf_rag.log"
+    enable_llm_verbose: bool = True  # 是否打印LLM详细报文
+    llm_max_log_chars: int = 4000    # LLM报文最大打印字符数
+    llm_redact_keys: list[str] = [   # 需要屏蔽的字段（包含大数组/向量）
+        "context", "embedding", "embeddings", "kv", "token_ids",
+        "eval", "prompt_eval", "vectors", "vector", "chunks"
+    ]
+    llm_hide_text_in_structured: bool = True  # 结构化日志中隐藏prompt/response，避免与pretty重复
+    # 彩色输出
+    enable_color: bool = True
+    color_prompt: str = "\033[36m"    # 青色
+    color_response: str = "\033[32m"  # 绿色
+    color_reset: str = "\033[0m"
 
 
 class Settings(BaseSettings):

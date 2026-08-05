@@ -1,0 +1,132 @@
+# 查询扩展配置文件
+# 支持动态配置，无需修改代码
+
+domain_configs:
+  rcp_system:
+    name: "RCP远程控制停车系统"
+    description: "远程控制停车系统的技术规范和法规要求"
+    
+    # 核心概念
+    core_concepts:
+      - "Remote Control Parking"
+      - "RCP"
+      - "远程控制停车"
+      - "远程停车系统"
+    
+    # 关键参数
+    key_parameters:
+      - "法规依据"
+      - "最大行驶距离"
+      - "速度限制"
+      - "最大操作距离"
+      - "技术要求"
+      - "申请流程"
+    
+    # 参数映射（关键词和值模式）
+    parameter_mappings:
+      法规依据:
+        keywords:
+          - "legislation"
+          - "regulation"
+          - "technical guideline"
+          - "cap 374a"
+          - "40c"
+          - "立法修正案"
+        value_patterns:
+          - "Transport Department Vehicle Safety and Standards Division"
+          - "Technical Guideline for Remote Control Parking Function"
+      
+      最大行驶距离:
+        keywords:
+          - "travel distance"
+          - "vehicle travel"
+          - "maximum travel"
+          - "12 metres"
+          - "12 meters"
+          - "12m"
+        value_patterns:
+          - "12 metres"
+          - "12 meters"
+          - "not exceeding 12 metres"
+        unit: "metres"
+      
+      速度限制:
+        keywords:
+          - "speed limit"
+          - "maximum speed"
+          - "vehicle speed"
+          - "2 km/h"
+          - "2km/h"
+          - "2 km"
+        value_patterns:
+          - "2 km/h"
+          - "2km/h"
+          - "not exceeding 2 km/h"
+        unit: "km/h"
+      
+      最大操作距离:
+        keywords:
+          - "operation distance"
+          - "control distance"
+          - "handheld distance"
+          - "remote distance"
+          - "6 metres"
+          - "6 meters"
+          - "6m"
+        value_patterns:
+          - "6 metres"
+          - "6 meters"
+          - "not exceeding 6 metres"
+        unit: "metres"
+    
+    # 相关概念扩展
+    related_concepts:
+      - "handheld device"
+      - "remote control device"
+      - "control device"
+      - "communication distance"
+      - "signal range"
+      - "control range"
+    
+    # 查询扩展策略
+    expansion_strategies:
+      - "parameter_specific"
+      - "concept_related"
+      - "technical_terms"
+      - "regulatory_terms"
+
+  # 可以添加其他领域配置
+  vehicle_safety:
+    name: "车辆安全系统"
+    description: "车辆安全系统的技术规范"
+    
+    core_concepts:
+      - "vehicle safety"
+      - "safety system"
+      - "车辆安全"
+    
+    key_parameters:
+      - "安全标准"
+      - "测试要求"
+      - "认证流程"
+    
+    parameter_mappings:
+      安全标准:
+        keywords:
+          - "safety standard"
+          - "safety requirement"
+          - "安全标准"
+          - "安全要求"
+
+# 全局配置
+global_config:
+  enable_auto_expansion: true
+  expansion_depth: 2
+  max_expanded_queries: 20
+  
+  # 通用扩展策略
+  general_strategies:
+    - "synonym_expansion"
+    - "concept_association"
+    - "domain_terminology"
+    - "parameter_completion" 

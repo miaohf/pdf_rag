@@ -6,7 +6,9 @@
 
 - 🤖 **智能问答**: 基于本地大语言模型的上下文感知回答
 - 🔍 **语义检索**: PostgreSQL + pgvector 的高效向量检索
+- 🧠 **统一RAG引擎**: 查询扩展、层次检索、重排序与答案生成的一体化管线
 - 📚 **文档处理**: 支持 PDF 等多格式文档的智能分片
+- 🔄 **Agentic 策略**: 可选多步推理与工具调用扩展
 - 🔒 **本地部署**: 完全本地化，保护数据隐私
 - ⚡ **高性能**: RTX 4090 显卡优化，支持大规模文档库
 - 🌐 **RESTful API**: 标准化的 Web API 接口
@@ -103,9 +105,10 @@ backend/
 │   │   ├── chunker.py     # 文档分片
 │   │   └── loader.py      # 文档加载
 │   ├── rag/               # RAG 引擎
-│   │   ├── engine.py      # RAG 核心引擎
-│   │   ├── retriever.py   # 检索器
-│   │   └── service.py     # RAG 服务层
+│   │   ├── engine.py      # 统一检索-生成引擎
+│   │   ├── retriever.py   # 层次化检索器
+│   │   ├── service.py     # RAG 服务层
+│   │   └── agentic_engine.py # Agentic 推理扩展
 │   ├── api/               # Web API
 │   │   ├── routes.py      # 路由定义
 │   │   ├── models.py      # 数据模型
