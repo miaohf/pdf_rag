@@ -395,7 +395,7 @@ class ConversationManager:
 
 
 class MultiTurnRagProcessor:
-    """多轮RAG处理器 - 集成对话管理到RAG流程"""
+    """多轮RAG处理器 - 负责会话上下文，实际检索由 RAGService 编排"""
     
     def __init__(self, conversation_manager: ConversationManager):
         self.conversation_manager = conversation_manager

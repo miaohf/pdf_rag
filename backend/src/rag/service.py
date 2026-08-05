@@ -13,6 +13,8 @@ from src.utils.logger import get_logger
 from src.core.database import Database
 from src.rag.prf_expander import LLMPRFExpander
 from src.rag.chunk_scorer import ChunkScorer
+from src.rag.retriever import VectorRetriever
+from src.rag.engine import UnifiedRAGEngine
 
 logger = get_logger(__name__)
 
@@ -47,15 +49,26 @@ class RAGService:
             self.vector_store = VectorStore(config, self.db, self.embedding_model)
             self.hierarchical_retriever = HierarchicalRetriever(config, self.db, self.vector_store)
             self.agentic_engine = AgenticRAGEngine(config, self.llm_client)
+            self.vector_retriever = VectorRetriever(
+                config,
+                self.vector_store,
+                self.hierarchical_retriever,
+            )
+            self.chunk_scorer = ChunkScorer(config, self.llm_client)
+            self.content_filter = HybridContentFilter(config, self.embedding_model)
+            self.prf_expander = LLMPRFExpander(config, self.llm_client)
+            self.rag_engine = UnifiedRAGEngine(
+                config,
+                vector_retriever=self.vector_retriever,
+                llm_client=self.llm_client,
+                chunk_scorer=self.chunk_scorer,
+                content_filter=self.content_filter,
+                prf_expander=self.prf_expander,
+            )
             self.tool_manager = ToolManager(config, self.vector_store)
             self.conversation_manager = ConversationManager(config, self.db)
-            self.content_filter = HybridContentFilter(config)
-            
-            # 通用 PRF 查询扩展器（无硬编码）
-            self.prf_expander = LLMPRFExpander(config, self.llm_client)
-            
-            # LLM 分片相关性打分器（通用、无硬编码）
-            self.chunk_scorer = ChunkScorer(config, self.llm_client)
+            # 多轮仅管理会话上下文；检索/生成由 query() -> UnifiedRAGEngine 完成
+            self.multi_turn_processor = MultiTurnRagProcessor(self.conversation_manager)
             
             logger.info("RAG服务初始化完成")
             
@@ -67,180 +80,54 @@ class RAGService:
                    use_reranking: bool = True, 
                    similarity_threshold: float = 0.3, **kwargs) -> Dict[str, Any]:
         """查询处理"""
-        start_time = time.time()
-        
         # 参数验证和默认值处理
         top_k = top_k or 5
         max_chunks = max_chunks or 3
         similarity_threshold = similarity_threshold or 0.3
         
         logger.info(f"收到查询: {question}")
-        logger.info(f"查询参数: top_k={top_k}, max_chunks={max_chunks}, similarity_threshold={similarity_threshold}")
-        
-        # 1) 首先使用大模型分解问题
-        logger.info("开始问题分解...")
+        logger.info(
+            f"查询参数: top_k={top_k}, max_chunks={max_chunks}, "
+            f"similarity_threshold={similarity_threshold}, use_reranking={use_reranking}"
+        )
+
+        # 1) Agentic 问题分解，得到子问题供统一引擎检索
         plan = self.agentic_engine.planner.plan_query(question)
         sub_questions = plan.sub_questions or [question]
         logger.info(f"问题分解完成，得到 {len(sub_questions)} 个子问题: {sub_questions}")
-        
-        # 2) 针对每个子问题独立进行相似度查询
-        all_retrieved_chunks: List[Dict[str, Any]] = []
-        sub_answers: List[Dict[str, Any]] = []
-        
-        for i, sub_q in enumerate(sub_questions, 1):
-            logger.info(f"处理子问题 {i}/{len(sub_questions)}: {sub_q}")
-            
-            # 对子问题进行检索
-            hr = self.hierarchical_retriever.hierarchical_search(
-                query=sub_q,
-                top_k=top_k,
-                similarity_threshold=similarity_threshold
-            )
-            
-            # 收集检索到的分片
-            sub_chunks = hr.child_chunks + hr.parent_contexts
-            all_retrieved_chunks.extend(sub_chunks)
-            
-            # 使用LLM对检索到的分片进行相关性打分
-            scored_chunks = self.chunk_scorer.score(sub_q, sub_chunks)
-            
-            # 为每个子问题选择最相关的分片
-            # 确保父分片和子分片都有机会被选中
-            parent_chunks = [c for c in scored_chunks if str(c.get("chunk_id", "")).startswith("parent_")]
-            child_chunks = [c for c in scored_chunks if not str(c.get("chunk_id", "")).startswith("parent_")]
-            
-            # 每个子问题选择：至少1个父分片（如果有）+ 2个子分片
-            selected_for_sub = []
-            if parent_chunks:
-                selected_for_sub.extend(parent_chunks[:1])  # 选择1个最佳父分片
-            selected_for_sub.extend(child_chunks[:2])  # 选择2个最佳子分片
-            
-            # 如果没有足够的分片，从剩余的scored中补充
-            if len(selected_for_sub) < 3:
-                remaining = [c for c in scored_chunks if c not in selected_for_sub]
-                selected_for_sub.extend(remaining[:3-len(selected_for_sub)])
-            
-            logger.info(f"子问题 {i} 选择了 {len(selected_for_sub)} 个分片: {[c.get('chunk_id') for c in selected_for_sub]}")
-            
-            # 生成子问题的答案
-            sub_context = self._build_context(selected_for_sub)
-            sub_prompt = self._build_prompt(sub_q, sub_context)
-            try:
-                sub_answer_text = self.llm_client.generate(sub_prompt, temperature=0.1)
-                logger.info(f"子问题 {i} 答案生成完成")
-            except Exception as e:
-                logger.warning(f"子问题 {i} 回答失败: {e}")
-                sub_answer_text = ""
-            
-            sub_answers.append({
-                "sub_question": sub_q,
-                "answer": sub_answer_text,
-                "chunks": [c.get("chunk_id") for c in selected_for_sub if c.get("chunk_id")]
-            })
-        
-        # 3) 去重所有检索到的分片
-        seen_chunk_ids = set()
-        unique_chunks: List[Dict[str, Any]] = []
-        for chunk in all_retrieved_chunks:
-            cid = chunk.get("chunk_id")
-            if cid and cid not in seen_chunk_ids:
-                seen_chunk_ids.add(cid)
-                unique_chunks.append(chunk)
-        
-        # 按相似度排序
-        unique_chunks.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
-        logger.info(f"合并后唯一文档数: {len(unique_chunks)}")
-        logger.info(f"chunk_ids: {[r.get('chunk_id') for r in unique_chunks[:10]]}")  # 只显示前10个
-        
-        if not unique_chunks:
-            logger.warning("未找到相关文档")
-            return {
-                "answer": "抱歉，我没有找到相关的文档来回答这个问题。",
-                "confidence": 0.0,
-                "sources": [],
-                "response_time": time.time() - start_time,
-                "query_id": str(uuid.uuid4()),
-                "hierarchical_info": {}
-            }
-        
-        # 4) 基于子问题答案生成最终综合答案
-        if sub_answers and len(sub_answers) > 1:
-            # 如果有多个子问题，汇总子答案生成最终答案
-            sub_answers_text = ""
-            for i, sub_answer in enumerate(sub_answers, 1):
-                sub_answers_text += f"\n\n**子问题{i}**: {sub_answer['sub_question']}\n"
-                sub_answers_text += f"**答案{i}**: {sub_answer['answer']}"
-            
-            final_prompt = f"""
-你是一个专业的法律法规智能助手。请基于以下子问题的答案，为用户提供一个完整、准确的综合回答。
 
-原始问题：{question}
+        # 2) 统一引擎：子问题检索 + 扩展 + 过滤/重排 + 生成
+        engine_output = self.rag_engine.run(
+            question,
+            sub_questions=sub_questions,
+            top_k=top_k,
+            similarity_threshold=similarity_threshold,
+            max_chunks=max_chunks,
+            use_reranking=use_reranking,
+        )
+        response = {
+            "answer": engine_output.answer,
+            "confidence": engine_output.confidence,
+            "sources": engine_output.sources,
+            "response_time": engine_output.response_time,
+            "query_id": str(uuid.uuid4()),
+            "retrieved_count": len(engine_output.retrieved_documents),
+            "selected_chunk_ids": [c.get("chunk_id") for c in engine_output.selected_chunks],
+            "query_traces": engine_output.query_traces,
+            "expansion_log": engine_output.expansion_log,
+            "fallback": engine_output.fallback,
+            # 兼容旧调用方字段
+            "hierarchical_info": {
+                "sub_questions": sub_questions,
+                "query_type": getattr(plan.query_type, "value", str(plan.query_type)),
+                "total_chunks_retrieved": len(engine_output.retrieved_documents),
+                "final_chunks_used": len(engine_output.selected_chunks),
+                "query_traces": engine_output.query_traces,
+                "expansion_log": engine_output.expansion_log,
+            },
+        }
 
-子问题及其答案：{sub_answers_text}
-
-请将上述子问题的答案整合为一个完整、连贯的回答，要求：
-1. 保持所有子答案的准确性，不要编造信息
-2. 回答要结构清晰、易于理解
-3. 如果子答案中有引用文档，请保留这些引用
-4. 保持专业、客观的语调
-
-综合回答：
-"""
-            logger.info("基于子问题答案生成最终综合答案...")
-        else:
-            # 如果只有一个子问题，直接使用其答案
-            if sub_answers:
-                logger.info("只有一个子问题，直接使用其答案")
-                final_answer = sub_answers[0]['answer']
-                sources = [self._format_source(doc) for doc in unique_chunks[:max_chunks]]
-                return {
-                    "answer": final_answer,
-                    "confidence": 0.8,
-                    "sources": sources,
-                    "response_time": time.time() - start_time,
-                    "query_id": str(uuid.uuid4()),
-                    "hierarchical_info": {
-                        "sub_questions": sub_questions,
-                        "sub_answers": sub_answers,
-                        "total_chunks_retrieved": len(unique_chunks),
-                        "final_chunks_used": len(unique_chunks[:max_chunks])
-                    }
-                }
-            else:
-                # 备用方案：基于分片生成答案
-                logger.info("无子答案，使用备用方案基于分片生成答案")
-                final_chunks = unique_chunks[:max_chunks]
-                final_context = self._build_context(final_chunks)
-                final_prompt = self._build_prompt(question, final_context)
-        
-        try:
-            final_answer = self.llm_client.generate(final_prompt, temperature=0.1)
-            logger.info("最终答案生成完成")
-            
-            sources = [self._format_source(doc) for doc in unique_chunks[:max_chunks]]
-            return {
-                "answer": final_answer,
-                "confidence": 0.8,
-                "sources": sources,
-                "response_time": time.time() - start_time,
-                "query_id": str(uuid.uuid4()),
-                "hierarchical_info": {
-                    "sub_questions": sub_questions,
-                    "sub_answers": sub_answers,
-                    "total_chunks_retrieved": len(unique_chunks),
-                    "final_chunks_used": len(unique_chunks[:max_chunks])
-                }
-            }
-        except Exception as e:
-            logger.error(f"生成答案失败: {e}")
-            return {
-                "answer": f"抱歉，生成答案时出现错误: {str(e)}",
-                "confidence": 0.0,
-                "sources": [],
-                "response_time": time.time() - start_time,
-                "query_id": str(uuid.uuid4()),
-                "hierarchical_info": {}
-            }
+        return response
     
     def query_stream(self, question: str, **kwargs) -> Generator[str, None, None]:
         """

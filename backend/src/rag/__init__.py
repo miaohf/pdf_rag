@@ -5,11 +5,11 @@ RAG (检索增强生成) 模块
 """
 
 from src.rag.service import RAGService
-from src.rag.engine import RAGEngine
+from src.rag.engine import UnifiedRAGEngine
 from src.rag.retriever import VectorRetriever
 
 __all__ = [
     "RAGService",
-    "RAGEngine",
-    "VectorRetriever"
+    "UnifiedRAGEngine",
+    "VectorRetriever",
 ]
