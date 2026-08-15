@@ -1,3 +1,21 @@
+---
+doc_id: HK-TD-RCP-TG
+title: Technical Guideline for Remote Control Parking Function
+title_zh: 远程控制停车功能技术指引
+jurisdiction: HK
+doc_type: guideline
+issuer: Transport Department Vehicle Safety and Standards Division
+effective_date: "2025-03-01"
+language: en
+related_instruments:
+  - Cap.374A Reg.40C
+  - Cap.374G Reg.42
+  - UNECE R79
+topics:
+  - RCP
+  - remote control parking
+  - type approval
+---
 # Transport Department Vehicle Safety and Standards Division Technical Guideline for Remote Control Parking Function
 
 1 Legislative Amendment regulating remote control parking system of vehicles comes into effective on 1 March 2025
